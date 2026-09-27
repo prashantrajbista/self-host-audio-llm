@@ -3,3 +3,4 @@ audios/
 __pycache__/
 *.pyc
 docs/
+.claude/

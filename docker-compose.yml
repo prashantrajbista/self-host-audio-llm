@@ -1,0 +1,57 @@
+services:
+  gateway:
+    build:
+      context: .
+      dockerfile: docker/gateway.Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - STT_BACKEND=remote
+      - STT_ENDPOINT=http://stt:8001
+      - LLM_BACKEND=ollama
+      - LLM_ENDPOINT=http://llm:11434
+      - LLM_MODEL=${LLM_MODEL:-llama3.2}
+      - TTS_BACKEND=remote
+      - TTS_ENDPOINT=http://tts:8002
+    depends_on:
+      - stt
+      - tts
+      - llm
+
+  stt:
+    build:
+      context: .
+      dockerfile: docker/stt.Dockerfile
+    ports:
+      - "8001:8001"
+    environment:
+      - WHISPER_MODEL=${WHISPER_MODEL:-base.en}
+      - DEVICE=cpu
+
+  tts:
+    build:
+      context: .
+      dockerfile: docker/tts.Dockerfile
+    ports:
+      - "8002:8002"
+    environment:
+      - TTS_VOICE=${TTS_VOICE:-af_heart}
+
+  llm:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/frontend.Dockerfile
+    ports:
+      - "80:80"
+    depends_on:
+      - gateway
+
+volumes:
+  ollama_data:
