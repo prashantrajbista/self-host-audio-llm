@@ -7,7 +7,8 @@ const player = new Player(24000);
 let socket = null;
 
 async function connect() {
-  socket = new WebSocket(`ws://${location.host}/ws`);
+  const wsProtocol = location.protocol === "https:" ? "wss:" : "ws:";
+  socket = new WebSocket(`${wsProtocol}//${location.host}/ws`);
   socket.binaryType = "arraybuffer";
 
   socket.onmessage = (event) => {
