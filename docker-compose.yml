@@ -2,7 +2,8 @@ services:
   gateway:
     build:
       context: .
-      dockerfile: docker/gateway.Dockerfile
+      dockerfile: docker/app.Dockerfile
+      target: gateway
     ports:
       - "8000:8000"
     environment:
@@ -23,7 +24,8 @@ services:
   stt:
     build:
       context: .
-      dockerfile: docker/stt.Dockerfile
+      dockerfile: docker/app.Dockerfile
+      target: stt
     ports:
       - "8001:8001"
     environment:
@@ -34,7 +36,8 @@ services:
   tts:
     build:
       context: .
-      dockerfile: docker/tts.Dockerfile
+      dockerfile: docker/app.Dockerfile
+      target: tts
     ports:
       - "8002:8002"
     environment:
