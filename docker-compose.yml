@@ -6,14 +6,14 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - STT_BACKEND=remote
-      - STT_ENDPOINT=http://stt:8001
-      - LLM_BACKEND=ollama
-      - LLM_ENDPOINT=http://llm:11434
-      - LLM_MODEL=${LLM_MODEL:-llama3.2}
-      - TTS_BACKEND=remote
-      - TTS_ENDPOINT=http://tts:8002
-      - LOG_LEVEL=${LOG_LEVEL:-DEBUG}
+      STT_BACKEND: remote
+      STT_ENDPOINT: http://stt:8001
+      LLM_BACKEND: ollama
+      LLM_ENDPOINT: http://llm:11434
+      LLM_MODEL: ${LLM_MODEL:-llama3.2}
+      TTS_BACKEND: remote
+      TTS_ENDPOINT: http://tts:8002
+      LOG_LEVEL: ${LOG_LEVEL:-DEBUG}
     depends_on:
       - stt
       - tts
@@ -26,9 +26,9 @@ services:
     ports:
       - "8001:8001"
     environment:
-      - WHISPER_MODEL=${WHISPER_MODEL:-base.en}
-      - DEVICE=cpu
-      - LOG_LEVEL=${LOG_LEVEL:-DEBUG}
+      WHISPER_MODEL: ${WHISPER_MODEL:-base.en}
+      DEVICE: cpu
+      LOG_LEVEL: ${LOG_LEVEL:-DEBUG}
 
   tts:
     build:
@@ -37,8 +37,8 @@ services:
     ports:
       - "8002:8002"
     environment:
-      - TTS_VOICE=${TTS_VOICE:-af_heart}
-      - LOG_LEVEL=${LOG_LEVEL:-DEBUG}
+      TTS_VOICE: ${TTS_VOICE:-af_heart}
+      LOG_LEVEL: ${LOG_LEVEL:-DEBUG}
 
   llm:
     image: ollama/ollama:latest

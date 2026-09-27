@@ -18,8 +18,8 @@ mic audio → STT adapter → LLM adapter → TTS adapter → speaker audio
 - [x] Phase 0 — adapter interfaces, config, Docker stubs
 - [x] Phase 1 — core pipeline working end-to-end locally (non-streaming)
 - [x] Phase 2 — full-duplex streaming + interactive orb frontend (server verified end-to-end; browser mic UI untested manually)
-- [ ] Phase 3 — Dockerize (per-service containers + compose)
-- [ ] Phase 4 — GPU + vLLM swap
+- [x] Phase 3 — Dockerize (per-service containers + compose)
+- [x] Phase 4 — GPU + vLLM swap (compose override written + validated; untested on real GPU hardware)
 - [ ] Phase 5 — GPU profiling/optimization
 - [ ] Phase 6 — Encodec integration
 - [ ] Phase 7 — Eval framework (WER, latency, NISQA, throughput)
@@ -51,6 +51,26 @@ python -m tests.test_session          # state machine + barge-in, fake adapters,
 python -m tests.test_ws_integration   # real STT/LLM/TTS over an actual WebSocket
 uvicorn server.main:app --reload      # then open http://localhost:8000 in a browser
 ```
+
+## Run with Docker (Phase 3)
+
+```bash
+docker compose up --build
+```
+
+Brings up `gateway`, `stt`, `tts`, `llm` (Ollama), `frontend` — visit `http://localhost` (nginx, proxies `/ws` to gateway). First run needs a model pulled into the Ollama container:
+
+```bash
+docker compose exec llm ollama pull llama3.2
+```
+
+## Run on a rented GPU with vLLM (Phase 4)
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build
+```
+
+Same stack, but `llm` becomes `vllm/vllm-openai` with a GPU reservation instead of Ollama — no other service changes. Needs `nvidia-container-toolkit` on the host. Model is set via `VLLM_MODEL` (default `Qwen/Qwen2.5-1.5B-Instruct`, an open/ungated HF model — swap for whatever fits your GPU's memory).
 
 ## Config (`.env`)
 
