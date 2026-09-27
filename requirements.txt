@@ -1,0 +1,9 @@
+faster-whisper
+kokoro
+soundfile
+numpy
+httpx
+pydantic-settings
+fastapi
+uvicorn[standard]
+websockets
