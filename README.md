@@ -58,7 +58,7 @@ uvicorn server.main:app --reload      # then open http://localhost:8000 in a bro
 docker compose up --build
 ```
 
-Brings up `gateway`, `stt`, `tts`, `llm` (Ollama), `frontend` — visit `http://localhost` (nginx, proxies `/ws` to gateway). First run needs a model pulled into the Ollama container:
+Brings up `gateway`, `stt`, `tts`, `llm` (Ollama), `frontend` — visit `http://localhost` (Next.js client, connects directly to the gateway's `/ws` on port 8000). First run needs a model pulled into the Ollama container:
 
 ```bash
 docker compose exec llm ollama pull llama3.2
