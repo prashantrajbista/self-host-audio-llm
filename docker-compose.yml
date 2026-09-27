@@ -55,8 +55,10 @@ services:
     build:
       context: .
       dockerfile: docker/frontend.Dockerfile
+      args:
+        NEXT_PUBLIC_GATEWAY_WS_URL: ${NEXT_PUBLIC_GATEWAY_WS_URL:-ws://localhost:8000/ws}
     ports:
-      - "80:80"
+      - "80:3000"
     depends_on:
       - gateway
 
