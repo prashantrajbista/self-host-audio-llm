@@ -58,8 +58,8 @@ async def main():
         send_json=send_json, send_bytes=send_bytes,
     )
 
-    # speech, then enough silence to trigger end-of-utterance
-    for _ in range(3):
+    # speech (past onset debounce threshold), then enough silence to trigger end-of-utterance
+    for _ in range(8):
         await session.handle_audio_frame(SPEECH_FRAME)
     for _ in range(26):
         await session.handle_audio_frame(SILENCE_FRAME)
@@ -81,11 +81,26 @@ async def main():
     session.state = "speaking"
     session._interrupt.clear()
     llm2 = session._llm
-    await session.handle_audio_frame(SPEECH_FRAME)
+    for _ in range(8):
+        await session.handle_audio_frame(SPEECH_FRAME)
     assert session._interrupt.is_set()
     assert llm2.cancelled
     assert any(e["type"] == "interrupt" for e in events), events
     print("barge-in PASS")
+
+    # --- noise blip: a few speech frames below the debounce threshold should be ignored ---
+    events.clear()
+    session2 = VoiceSession(
+        stt=FakeSTT(), llm=FakeLLM(), tts=FakeTTS(), vad=FakeVAD(),
+        send_json=send_json, send_bytes=send_bytes,
+    )
+    for _ in range(3):  # below SPEECH_FRAMES_START_THRESHOLD (5)
+        await session2.handle_audio_frame(SPEECH_FRAME)
+    for _ in range(5):
+        await session2.handle_audio_frame(SILENCE_FRAME)
+    assert session2.state == "idle", session2.state
+    assert not events, f"noise blip should not emit any events, got {events}"
+    print("noise-blip rejection PASS")
 
 
 if __name__ == "__main__":

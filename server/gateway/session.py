@@ -11,6 +11,7 @@ logger = logging.getLogger(__name__)
 
 FRAME_MS = 20
 SILENCE_FRAMES_END_OF_TURN = 25  # ~500ms of trailing silence ends the utterance
+SPEECH_FRAMES_START_THRESHOLD = 5  # ~100ms of consecutive speech before committing — filters noise blips
 SENTENCE_ENDERS = (".", "!", "?")
 
 
@@ -37,23 +38,36 @@ class VoiceSession:
         self._audio_buffer = bytearray()
         self._speech_started = False
         self._silence_frames = 0
+        self._pending_frames: list[bytes] = []
         self._interrupt = asyncio.Event()
         self._turn_task: asyncio.Task | None = None
 
     async def handle_audio_frame(self, frame: bytes) -> None:
         is_speech = self._vad.is_speech(frame)
 
-        if self.state == "speaking" and is_speech:
-            await self._barge_in()
-
-        if is_speech:
-            self._audio_buffer.extend(frame)
-            self._silence_frames = 0
-            if not self._speech_started:
+        if not self._speech_started:
+            # debounce onset: require several consecutive speech frames before committing,
+            # so a single noisy/misclassified frame doesn't start a turn or trigger barge-in
+            if not is_speech:
+                self._pending_frames.clear()
+                return
+            self._pending_frames.append(frame)
+            if len(self._pending_frames) < SPEECH_FRAMES_START_THRESHOLD:
+                return
+            if self.state == "speaking":
+                await self._barge_in()
+            else:
                 self._speech_started = True
                 await self._set_state("listening")
-        elif self._speech_started:
-            self._audio_buffer.extend(frame)
+            self._audio_buffer.extend(b"".join(self._pending_frames))
+            self._pending_frames.clear()
+            self._silence_frames = 0
+            return
+
+        self._audio_buffer.extend(frame)
+        if is_speech:
+            self._silence_frames = 0
+        else:
             self._silence_frames += 1
             if self._silence_frames >= SILENCE_FRAMES_END_OF_TURN:
                 await self._end_of_utterance()
@@ -63,6 +77,7 @@ class VoiceSession:
         self._audio_buffer.clear()
         self._speech_started = False
         self._silence_frames = 0
+        self._pending_frames.clear()
         self._interrupt.clear()
         logger.debug("end of utterance: %d bytes of audio", len(audio))
         await self._set_state("thinking")
