@@ -1,10 +1,13 @@
 import asyncio
+import logging
 from collections.abc import Awaitable, Callable
 
 from server.adapters.llm.base import LLMAdapter, Message
 from server.adapters.stt.base import STTAdapter
 from server.adapters.tts.base import TTSAdapter
 from server.vad.vad import VAD
+
+logger = logging.getLogger(__name__)
 
 FRAME_MS = 20
 SILENCE_FRAMES_END_OF_TURN = 25  # ~500ms of trailing silence ends the utterance
@@ -61,6 +64,7 @@ class VoiceSession:
         self._speech_started = False
         self._silence_frames = 0
         self._interrupt.clear()
+        logger.debug("end of utterance: %d bytes of audio", len(audio))
         await self._set_state("thinking")
         self._turn_task = asyncio.create_task(self._process_turn(audio))
 
@@ -70,6 +74,7 @@ class VoiceSession:
             async for event in self._stt.transcribe_stream(audio):
                 if event.is_final:
                     transcript = event.text
+            logger.info("transcript: %r", transcript)
             if not transcript.strip() or self._interrupt.is_set():
                 await self._set_state("idle")
                 return
@@ -77,21 +82,27 @@ class VoiceSession:
 
             await self._set_state("speaking")
             sentence_buf = ""
+            reply = ""
             async for token in self._llm.generate_stream([Message(role="user", content=transcript)]):
                 if self._interrupt.is_set():
                     break
                 await self._send_json({"type": "token", "data": token})
                 sentence_buf += token
+                reply += token
                 if sentence_buf.rstrip().endswith(SENTENCE_ENDERS):
                     await self._speak(sentence_buf)
                     sentence_buf = ""
             if sentence_buf.strip() and not self._interrupt.is_set():
                 await self._speak(sentence_buf)
+            logger.info("reply: %r", reply)
 
             if not self._interrupt.is_set():
                 await self._set_state("idle")
         except asyncio.CancelledError:
-            pass
+            logger.debug("turn cancelled (barge-in)")
+        except Exception:
+            logger.exception("turn failed")
+            await self._set_state("idle")
 
     async def _speak(self, text: str) -> None:
         async for chunk in self._tts.synthesize_stream(text):
@@ -100,6 +111,7 @@ class VoiceSession:
             await self._send_bytes(chunk)
 
     async def _barge_in(self) -> None:
+        logger.info("barge-in detected")
         self._interrupt.set()
         await self._llm.cancel()
         if self._turn_task:
@@ -111,5 +123,6 @@ class VoiceSession:
         await self._set_state("listening")
 
     async def _set_state(self, state: str) -> None:
+        logger.debug("state: %s -> %s", self.state, state)
         self.state = state
         await self._send_json({"type": "state", "data": state})

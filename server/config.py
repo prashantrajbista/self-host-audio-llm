@@ -17,6 +17,7 @@ class Settings(BaseSettings):
 
     codec_enabled: bool = False
     device: str = "cpu"
+    log_level: str = "DEBUG"
 
     class Config:
         env_file = ".env"

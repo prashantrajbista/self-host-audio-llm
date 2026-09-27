@@ -13,6 +13,7 @@ services:
       - LLM_MODEL=${LLM_MODEL:-llama3.2}
       - TTS_BACKEND=remote
       - TTS_ENDPOINT=http://tts:8002
+      - LOG_LEVEL=${LOG_LEVEL:-DEBUG}
     depends_on:
       - stt
       - tts
@@ -27,6 +28,7 @@ services:
     environment:
       - WHISPER_MODEL=${WHISPER_MODEL:-base.en}
       - DEVICE=cpu
+      - LOG_LEVEL=${LOG_LEVEL:-DEBUG}
 
   tts:
     build:
@@ -36,6 +38,7 @@ services:
       - "8002:8002"
     environment:
       - TTS_VOICE=${TTS_VOICE:-af_heart}
+      - LOG_LEVEL=${LOG_LEVEL:-DEBUG}
 
   llm:
     image: ollama/ollama:latest
