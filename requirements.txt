@@ -7,3 +7,4 @@ pydantic-settings
 fastapi
 uvicorn[standard]
 websockets
+webrtcvad-wheels

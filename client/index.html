@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Voice Agent</title>
+  <style>
+    body { background: #0b0f14; color: #e5e7eb; font-family: system-ui, sans-serif; display: flex; flex-direction: column; align-items: center; gap: 24px; padding-top: 60px; }
+    canvas { border-radius: 50%; }
+    button { padding: 10px 20px; font-size: 16px; cursor: pointer; }
+    #transcript { max-width: 480px; text-align: center; min-height: 2em; }
+  </style>
+</head>
+<body>
+  <canvas id="orb" width="240" height="240"></canvas>
+  <button id="connect">Start talking</button>
+  <div id="transcript"></div>
+  <script type="module" src="ws.js"></script>
+</body>
+</html>

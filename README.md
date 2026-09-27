@@ -17,7 +17,7 @@ mic audio → STT adapter → LLM adapter → TTS adapter → speaker audio
 
 - [x] Phase 0 — adapter interfaces, config, Docker stubs
 - [x] Phase 1 — core pipeline working end-to-end locally (non-streaming)
-- [ ] Phase 2 — full-duplex streaming + interactive orb frontend
+- [x] Phase 2 — full-duplex streaming + interactive orb frontend (server verified end-to-end; browser mic UI untested manually)
 - [ ] Phase 3 — Dockerize (per-service containers + compose)
 - [ ] Phase 4 — GPU + vLLM swap
 - [ ] Phase 5 — GPU profiling/optimization
@@ -43,6 +43,14 @@ python -m tests.test_turn /path/to/sample.wav
 ```
 
 Runs one full turn (transcribe → generate reply → synthesize speech) through whichever backends `.env` selects, and asserts each stage produced output.
+
+## Run the Phase 2 checks
+
+```bash
+python -m tests.test_session          # state machine + barge-in, fake adapters, no models
+python -m tests.test_ws_integration   # real STT/LLM/TTS over an actual WebSocket
+uvicorn server.main:app --reload      # then open http://localhost:8000 in a browser
+```
 
 ## Config (`.env`)
 

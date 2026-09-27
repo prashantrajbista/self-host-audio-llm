@@ -14,9 +14,13 @@ class FasterWhisperAdapter(STTAdapter):
         self._model = WhisperModel(model_size, device=device, compute_type=compute_type)
 
     async def transcribe_stream(self, audio_chunk: bytes) -> AsyncIterator[TranscriptEvent]:
-        audio, _ = sf.read(io.BytesIO(audio_chunk), dtype="float32")
-        if audio.ndim > 1:
-            audio = np.mean(audio, axis=1)
+        if audio_chunk[:4] == b"RIFF":
+            audio, _ = sf.read(io.BytesIO(audio_chunk), dtype="float32")
+            if audio.ndim > 1:
+                audio = np.mean(audio, axis=1)
+        else:
+            # raw PCM16 mono 16kHz, as sent over the WS mic stream
+            audio = np.frombuffer(audio_chunk, dtype=np.int16).astype(np.float32) / 32768.0
         segments, _ = self._model.transcribe(audio, language="en")
         text = " ".join(segment.text.strip() for segment in segments)
         yield TranscriptEvent(text=text, is_final=True)
