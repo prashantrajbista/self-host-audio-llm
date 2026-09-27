@@ -20,7 +20,7 @@ mic audio → STT adapter → LLM adapter → TTS adapter → speaker audio
 - [x] Phase 2 — full-duplex streaming + interactive orb frontend (server verified end-to-end; browser mic UI untested manually)
 - [x] Phase 3 — Dockerize (per-service containers + compose)
 - [x] Phase 4 — GPU + vLLM swap (compose override written + validated; untested on real GPU hardware)
-- [ ] Phase 5 — GPU profiling/optimization
+- [x] Phase 5 — GPU profiling/optimization (tooling written; `latency_bench` verified against live server, `gpu_util_log`/`profile_llm_torch` need real GPU hardware to run)
 - [ ] Phase 6 — Encodec integration
 - [ ] Phase 7 — Eval framework (WER, latency, NISQA, throughput)
 
@@ -71,6 +71,28 @@ docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build
 ```
 
 Same stack, but `llm` becomes `vllm/vllm-openai` with a GPU reservation instead of Ollama — no other service changes. Needs `nvidia-container-toolkit` on the host. Model is set via `VLLM_MODEL` (default `Qwen/Qwen2.5-1.5B-Instruct`, an open/ungated HF model — swap for whatever fits your GPU's memory).
+
+## Run the Phase 5 profiling tools
+
+```bash
+# latency benchmark — real network WS against a running gateway, p50/p95 per stage
+python -m eval.latency_bench --host localhost --port 8000 --wav /tmp/test_sample.wav --turns 5
+
+# GPU utilization — run in a separate terminal alongside a load test (needs nvidia-smi)
+python -m eval.gpu_util_log --duration 60 --out eval/results/gpu_util.csv
+
+# torch.profiler trace of vLLM's offline Python API (kernel-level CPU+CUDA breakdown) —
+# run directly on the GPU box with `pip install vllm`, not in a container, not on this Mac
+python -m eval.profile_llm_torch --model Qwen/Qwen2.5-1.5B-Instruct --out eval/results
+```
+
+For a system-level CUDA trace (finds which kernels dominate, not just wall time), wrap the
+`vllm serve` process with NVIDIA Nsight Systems (`nsys profile -o run1 -- vllm serve ...`) —
+requires the Nsight Systems CLI on the GPU box matching its CUDA/OS version; check
+[NVIDIA's download page](https://developer.nvidia.com/nsight-systems) for the exact install
+command for that machine rather than assuming one apt package name across versions.
+
+Optimization order to try, cheapest first: quantization (`--quantization awq`/`fp8`) → `--max-num-seqs` tuning → `--enable-prefix-caching`. Capture `latency_bench` + `gpu_util_log` before and after each change.
 
 ## Config (`.env`)
 

@@ -3,16 +3,32 @@ from server.adapters.stt.base import STTAdapter
 from server.adapters.tts.base import TTSAdapter
 from server.config import Settings
 
+# STT/TTS adapters hold no per-connection state and are expensive to construct (model load /
+# HF download), so cache them as process-wide singletons keyed by their own config — reloading
+# per WS connection blocked the event loop long enough to time out the handshake itself. LLM
+# adapters carry per-connection cancel state (barge-in) and are cheap to build (no model load),
+# so those stay fresh per connection. Settings itself isn't hashable, so key on the relevant
+# fields rather than lru_cache-ing the Settings object directly.
+_stt_cache: dict[tuple, STTAdapter] = {}
+_tts_cache: dict[tuple, TTSAdapter] = {}
+
 
 def get_stt(settings: Settings) -> STTAdapter:
     if settings.stt_backend == "faster_whisper":
-        from server.adapters.stt.faster_whisper_adapter import FasterWhisperAdapter
+        device = settings.device if settings.device != "mps" else "cpu"
+        key = ("faster_whisper", settings.whisper_model, device)
+        if key not in _stt_cache:
+            from server.adapters.stt.faster_whisper_adapter import FasterWhisperAdapter
 
-        return FasterWhisperAdapter(model_size=settings.whisper_model, device=settings.device if settings.device != "mps" else "cpu")
+            _stt_cache[key] = FasterWhisperAdapter(model_size=settings.whisper_model, device=device)
+        return _stt_cache[key]
     if settings.stt_backend == "remote":
-        from server.adapters.stt.http_client_adapter import HTTPSTTAdapter
+        key = ("remote", settings.stt_endpoint)
+        if key not in _stt_cache:
+            from server.adapters.stt.http_client_adapter import HTTPSTTAdapter
 
-        return HTTPSTTAdapter(endpoint=settings.stt_endpoint)
+            _stt_cache[key] = HTTPSTTAdapter(endpoint=settings.stt_endpoint)
+        return _stt_cache[key]
     raise ValueError(f"Unknown STT_BACKEND: {settings.stt_backend}")
 
 
@@ -30,11 +46,17 @@ def get_llm(settings: Settings) -> LLMAdapter:
 
 def get_tts(settings: Settings) -> TTSAdapter:
     if settings.tts_backend == "kokoro":
-        from server.adapters.tts.kokoro_adapter import KokoroAdapter
+        key = ("kokoro", settings.tts_voice)
+        if key not in _tts_cache:
+            from server.adapters.tts.kokoro_adapter import KokoroAdapter
 
-        return KokoroAdapter(voice=settings.tts_voice)
+            _tts_cache[key] = KokoroAdapter(voice=settings.tts_voice)
+        return _tts_cache[key]
     if settings.tts_backend == "remote":
-        from server.adapters.tts.http_client_adapter import HTTPTTSAdapter
+        key = ("remote", settings.tts_endpoint)
+        if key not in _tts_cache:
+            from server.adapters.tts.http_client_adapter import HTTPTTSAdapter
 
-        return HTTPTTSAdapter(endpoint=settings.tts_endpoint)
+            _tts_cache[key] = HTTPTTSAdapter(endpoint=settings.tts_endpoint)
+        return _tts_cache[key]
     raise ValueError(f"Unknown TTS_BACKEND: {settings.tts_backend}")
