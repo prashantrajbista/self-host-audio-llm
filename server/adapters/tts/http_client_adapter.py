@@ -12,7 +12,8 @@ class HTTPTTSAdapter(TTSAdapter):
         self._endpoint = endpoint
 
     async def synthesize_stream(self, text_chunk: str) -> AsyncIterator[bytes]:
-        async with httpx.AsyncClient(timeout=60.0) as client:
+        timeout = httpx.Timeout(connect=5.0, read=180.0, write=30.0, pool=5.0)
+        async with httpx.AsyncClient(timeout=timeout) as client:
             async with client.stream("POST", f"{self._endpoint}/synthesize", json={"text": text_chunk}) as response:
                 response.raise_for_status()
                 async for chunk in response.aiter_bytes():

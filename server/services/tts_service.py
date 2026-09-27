@@ -1,4 +1,5 @@
 import logging
+import time
 
 from fastapi import FastAPI
 from fastapi.responses import StreamingResponse
@@ -26,10 +27,11 @@ async def synthesize(req: SynthesizeRequest):
     logger.debug("synthesize request: %r", req.text)
 
     async def gen():
+        start = time.monotonic()
         chunks = 0
         async for chunk in _adapter.synthesize_stream(req.text):
             chunks += 1
             yield chunk
-        logger.debug("synthesize done: %d chunks", chunks)
+        logger.info("synthesize done (%.2fs): %d chunks", time.monotonic() - start, chunks)
 
     return StreamingResponse(gen(), media_type="application/octet-stream")

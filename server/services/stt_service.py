@@ -1,4 +1,5 @@
 import logging
+import time
 
 from fastapi import FastAPI, Request
 
@@ -20,9 +21,11 @@ logger.info("STT service ready: model=%s device=%s", settings.whisper_model, _de
 async def transcribe(request: Request):
     audio = await request.body()
     logger.debug("transcribe request: %d bytes", len(audio))
+    start = time.monotonic()
     text = ""
     async for event in _adapter.transcribe_stream(audio):
         if event.is_final:
             text = event.text
-    logger.info("transcript: %r", text)
+    elapsed = time.monotonic() - start
+    logger.info("transcript (%.2fs): %r", elapsed, text)
     return {"text": text}
