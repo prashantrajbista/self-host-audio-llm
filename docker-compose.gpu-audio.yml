@@ -1,0 +1,27 @@
+# Rented GPU box, STT/TTS/VAD only — no vLLM/Ollama image pulled, LLM backend stays whatever
+# docker-compose.yml/.env already picked (openai by default). Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.gpu-audio.yml up --build
+x-gpu: &gpu
+  deploy:
+    resources:
+      reservations:
+        devices:
+          - driver: nvidia
+            count: 1
+            capabilities: [gpu]
+
+services:
+  gateway:
+    environment:
+      DEVICE: cuda
+    <<: *gpu
+
+  stt:
+    environment:
+      DEVICE: cuda
+    <<: *gpu
+
+  tts:
+    environment:
+      DEVICE: cuda
+    <<: *gpu
