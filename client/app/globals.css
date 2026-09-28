@@ -2,9 +2,38 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Color tokens as RGB channels so Tailwind opacity modifiers (bg-divider/40) keep working.
+   Dark values follow the system setting. */
+:root {
+  color-scheme: light dark;
+  --bg: 245 245 247;
+  --surface: 255 255 255;
+  --ink: 29 29 31;
+  --ink-secondary: 110 110 115;
+  --divider: 210 210 215;
+  --primary: 0 105 92;
+  --primary-hover: 0 77 64;
+  --error: 255 59 48;
+  --link: 0 122 255;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: 0 0 0;
+    --surface: 28 28 30;
+    --ink: 245 245 247;
+    --ink-secondary: 152 152 157;
+    --divider: 56 56 58;
+    --primary: 0 137 123;
+    --primary-hover: 0 121 107; /* darker on hover: white label keeps contrast */
+    --error: 255 69 58;
+    --link: 10 132 255;
+  }
+}
+
 html,
 body {
   height: 100%;
-  background-color: #f5f5f7;
-  color: #1d1d1f;
+  background-color: rgb(var(--bg));
+  color: rgb(var(--ink));
 }

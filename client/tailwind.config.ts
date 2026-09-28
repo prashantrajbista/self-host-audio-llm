@@ -5,15 +5,15 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        bg: "#f5f5f7",
-        surface: "#ffffff",
-        ink: "#1d1d1f",
-        "ink-secondary": "#6e6e73",
-        divider: "#d2d2d7",
-        primary: "#00695c",
-        "primary-hover": "#004d40",
-        error: "#ff3b30",
-        link: "#007aff",
+        bg: "rgb(var(--bg) / <alpha-value>)",
+        surface: "rgb(var(--surface) / <alpha-value>)",
+        ink: "rgb(var(--ink) / <alpha-value>)",
+        "ink-secondary": "rgb(var(--ink-secondary) / <alpha-value>)",
+        divider: "rgb(var(--divider) / <alpha-value>)",
+        primary: "rgb(var(--primary) / <alpha-value>)",
+        "primary-hover": "rgb(var(--primary-hover) / <alpha-value>)",
+        error: "rgb(var(--error) / <alpha-value>)",
+        link: "rgb(var(--link) / <alpha-value>)",
       },
       fontFamily: {
         sans: ["-apple-system", "BlinkMacSystemFont", '"SF Pro Text"', "system-ui", "sans-serif"],

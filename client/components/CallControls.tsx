@@ -24,7 +24,7 @@ export function CallControls({
         disabled={!micReady}
         aria-label={muted ? "Unmute microphone" : "Mute microphone"}
         aria-pressed={muted}
-        className={`${BUTTON} ${muted ? "bg-ink text-white" : NEUTRAL}`}
+        className={`${BUTTON} ${muted ? "bg-ink text-bg" : NEUTRAL}`}
       >
         <Icon>
           <rect x="9" y="2" width="6" height="12" rx="3" />
