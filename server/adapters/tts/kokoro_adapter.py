@@ -7,8 +7,8 @@ from server.adapters.tts.base import TTSAdapter
 
 
 class KokoroAdapter(TTSAdapter):
-    def __init__(self, voice: str = "af_heart", lang_code: str = "a"):
-        self._pipeline = KPipeline(lang_code=lang_code)
+    def __init__(self, voice: str = "af_heart", lang_code: str = "a", device: str = "cpu"):
+        self._pipeline = KPipeline(lang_code=lang_code, device=device)
         self._voice = voice
 
     async def synthesize_stream(self, text_chunk: str) -> AsyncIterator[bytes]:

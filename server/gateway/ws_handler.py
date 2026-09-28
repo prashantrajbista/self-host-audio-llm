@@ -25,7 +25,7 @@ async def websocket_endpoint(ws: WebSocket) -> None:
         stt=get_stt(settings),
         llm=get_llm(settings),
         tts=get_tts(settings),
-        vad=VAD(threshold=settings.vad_threshold),
+        vad=VAD(threshold=settings.vad_threshold, device=settings.device),
         send_json=ws.send_json,
         send_bytes=ws.send_bytes,
     )
