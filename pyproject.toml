@@ -1,0 +1,21 @@
+[project]
+name = "self-host-audio-llm"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "faster-whisper",
+    "kokoro",
+    "soundfile",
+    "numpy",
+    "httpx",
+    "pydantic-settings",
+    "fastapi",
+    "uvicorn[standard]",
+    "websockets",
+    "silero-vad",
+    "nvidia-cublas-cu12; sys_platform == 'linux'",
+    "nvidia-cudnn-cu12; sys_platform == 'linux'",
+]
+
+[tool.uv]
+package = false

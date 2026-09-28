@@ -27,9 +27,7 @@ mic audio → STT adapter → LLM adapter → TTS adapter → speaker audio
 ## Setup
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
+uv sync
 cp .env.example .env
 # set OPENAI_API_KEY in .env (LLM_BACKEND=openai by default)
 
@@ -41,7 +39,7 @@ cp .env.example .env
 ## Run the Phase 1 check
 
 ```bash
-python -m tests.test_turn /path/to/sample.wav
+uv run python -m tests.test_turn /path/to/sample.wav
 ```
 
 Runs one full turn (transcribe → generate reply → synthesize speech) through whichever backends `.env` selects, and asserts each stage produced output.
@@ -49,9 +47,9 @@ Runs one full turn (transcribe → generate reply → synthesize speech) through
 ## Run the Phase 2 checks
 
 ```bash
-python -m tests.test_session          # state machine + barge-in, fake adapters, no models
-python -m tests.test_ws_integration   # real STT/LLM/TTS over an actual WebSocket
-uvicorn server.main:app --reload      # then open http://localhost:8000 in a browser
+uv run python -m tests.test_session          # state machine + barge-in, fake adapters, no models
+uv run python -m tests.test_ws_integration   # real STT/LLM/TTS over an actual WebSocket
+uv run uvicorn server.main:app --reload      # then open http://localhost:8000 in a browser
 ```
 
 ## Run with Docker (Phase 3)
@@ -81,14 +79,14 @@ Same stack, but `llm` becomes `vllm/vllm-openai` with a GPU reservation instead 
 
 ```bash
 # latency benchmark — real network WS against a running gateway, p50/p95 per stage
-python -m eval.latency_bench --host localhost --port 8000 --wav /tmp/test_sample.wav --turns 5
+uv run python -m eval.latency_bench --host localhost --port 8000 --wav /tmp/test_sample.wav --turns 5
 
 # GPU utilization — run in a separate terminal alongside a load test (needs nvidia-smi)
-python -m eval.gpu_util_log --duration 60 --out eval/results/gpu_util.csv
+uv run python -m eval.gpu_util_log --duration 60 --out eval/results/gpu_util.csv
 
 # torch.profiler trace of vLLM's offline Python API (kernel-level CPU+CUDA breakdown) —
-# run directly on the GPU box with `pip install vllm`, not in a container, not on this Mac
-python -m eval.profile_llm_torch --model Qwen/Qwen2.5-1.5B-Instruct --out eval/results
+# run directly on the GPU box with `uv add vllm`, not in a container, not on this Mac
+uv run python -m eval.profile_llm_torch --model Qwen/Qwen2.5-1.5B-Instruct --out eval/results
 ```
 
 For a system-level CUDA trace (finds which kernels dominate, not just wall time), wrap the

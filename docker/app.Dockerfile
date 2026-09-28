@@ -1,11 +1,14 @@
 FROM python:3.11-slim AS base
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 WORKDIR /app
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy
+COPY pyproject.toml uv.lock .
+RUN uv sync --frozen --no-cache
+ENV PATH="/app/.venv/bin:${PATH}"
 # ctranslate2 (faster-whisper's backend) dlopen's libcublas/libcudnn via the linker's search
 # path, not Python's — torch's pip-installed nvidia-cublas-cu12/nvidia-cudnn-cu12 wheels put
 # the .so files under site-packages, invisible to the linker unless pointed at explicitly.
-ENV LD_LIBRARY_PATH="/usr/local/lib/python3.11/site-packages/nvidia/cublas/lib:/usr/local/lib/python3.11/site-packages/nvidia/cudnn/lib:${LD_LIBRARY_PATH}"
+ENV LD_LIBRARY_PATH="/app/.venv/lib/python3.11/site-packages/nvidia/cublas/lib:/app/.venv/lib/python3.11/site-packages/nvidia/cudnn/lib:${LD_LIBRARY_PATH}"
 COPY server/ server/
 
 FROM base AS stt
