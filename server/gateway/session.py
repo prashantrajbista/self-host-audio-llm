@@ -18,7 +18,20 @@ SILENCE_FRAMES_END_OF_TURN = 25  # ~500ms of trailing silence ends the utterance
 SILENCE_FRAMES_SPECULATIVE_STT = 10
 SPEECH_FRAMES_START_THRESHOLD = 5  # ~100ms of consecutive speech before committing — filters noise blips
 FIRST_CHUNK_MIN_WORDS = 3  # the first TTS chunk may end at a comma once it has this many words
-SYSTEM_PROMPT = "You are a voice assistant. Keep answers short — a sentence or two unless the user asks for more detail."
+# Everything the model writes is spoken aloud by TTS, so ask for speakable text up front rather than
+# relying only on _strip_markdown after the fact (which remains as a safety net).
+SYSTEM_PROMPT = (
+    "You are a friendly voice assistant in a live spoken conversation. Everything you write is read aloud "
+    "by a text-to-speech engine, so write only what should be spoken.\n"
+    "- Keep answers short: a sentence or two unless the user asks for more detail.\n"
+    "- Talk like a person: plain conversational sentences, contractions, no filler.\n"
+    "- Never use markdown, bullet points, numbered lists, headings, tables, code blocks, emojis, or URLs. "
+    "If you need to list things, say them in a sentence, like \"first..., then..., and finally...\".\n"
+    "- Write numbers, dates, times, units, and symbols the way they're said: \"twenty-five degrees\", "
+    "\"three thirty pm\", \"about five percent\", \"forty dollars\".\n"
+    "- Spell out abbreviations that aren't normally said as letters, and avoid parentheses.\n"
+    "- If the request is unclear or you didn't catch it, briefly ask the user to repeat or clarify."
+)
 
 _MD_LINK = re.compile(r"\[([^\]]*)\]\([^)]*\)")
 _MD_HEADING = re.compile(r"^#{1,6}\s*", re.MULTILINE)
