@@ -9,9 +9,10 @@ services:
     environment:
       STT_BACKEND: remote
       STT_ENDPOINT: http://stt:8001
-      LLM_BACKEND: ollama
-      LLM_ENDPOINT: http://llm:11434
-      LLM_MODEL: ${LLM_MODEL:-llama3.2}
+      LLM_BACKEND: ${LLM_BACKEND:-openai}
+      LLM_ENDPOINT: ${LLM_ENDPOINT:-https://api.openai.com}
+      LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       TTS_BACKEND: remote
       TTS_ENDPOINT: http://tts:8002
       LOG_LEVEL: ${LOG_LEVEL:-DEBUG}
@@ -19,7 +20,6 @@ services:
     depends_on:
       - stt
       - tts
-      - llm
 
   stt:
     build:
@@ -44,12 +44,12 @@ services:
       TTS_VOICE: ${TTS_VOICE:-af_heart}
       LOG_LEVEL: ${LOG_LEVEL:-DEBUG}
 
-  llm:
-    image: ollama/ollama:latest
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama_data:/root/.ollama
+  # llm:
+  #   image: ollama/ollama:latest
+  #   ports:
+  #     - "11434:11434"
+  #   volumes:
+  #     - ollama_data:/root/.ollama
 
   frontend:
     build:
@@ -62,5 +62,5 @@ services:
     depends_on:
       - gateway
 
-volumes:
-  ollama_data:
+# volumes:
+#   ollama_data:

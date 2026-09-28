@@ -41,6 +41,10 @@ def get_llm(settings: Settings) -> LLMAdapter:
         from server.adapters.llm.vllm_adapter import VLLMAdapter
 
         return VLLMAdapter(endpoint=settings.llm_endpoint, model=settings.llm_model)
+    if settings.llm_backend == "openai":
+        from server.adapters.llm.openai_adapter import OpenAIAdapter
+
+        return OpenAIAdapter(endpoint=settings.llm_endpoint, model=settings.llm_model, api_key=settings.openai_api_key)
     raise ValueError(f"Unknown LLM_BACKEND: {settings.llm_backend}")
 
 

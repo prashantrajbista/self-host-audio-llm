@@ -1,6 +1,6 @@
 # Low-Latency Streaming Voice Agent (STT → LLM → TTS)
 
-Self-hosted, full-duplex streaming voice pipeline — Whisper (STT) → LLM (Ollama/vLLM) → Kokoro/Piper (TTS) — built and served from scratch, not just API calls.
+Full-duplex streaming voice pipeline — Whisper (STT) → LLM (OpenAI, self-hosted Ollama/vLLM optional) → Kokoro/Piper (TTS) — STT/TTS built and served from scratch, LLM swappable via adapter.
 
 See [voice-ai-project.md](voice-ai-project.md) for motivation/CV context and [PLAN.md](PLAN.md) for the full build plan.
 
@@ -10,7 +10,7 @@ Every stage (STT/LLM/TTS/Codec) sits behind an adapter interface, swappable via 
 
 ```
 mic audio → STT adapter → LLM adapter → TTS adapter → speaker audio
-             (faster-whisper)  (Ollama/vLLM)   (Kokoro/Piper)
+             (faster-whisper)  (OpenAI/Ollama/vLLM)   (Kokoro/Piper)
 ```
 
 ## Status
@@ -31,9 +31,11 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
+# set OPENAI_API_KEY in .env (LLM_BACKEND=openai by default)
 
-ollama serve &
-ollama pull llama3.2   # or whichever LLM_MODEL is set in .env
+# to use a self-hosted LLM instead, set LLM_BACKEND=ollama or vllm in .env, then:
+# ollama serve &
+# ollama pull llama3.2   # or whichever LLM_MODEL is set in .env
 ```
 
 ## Run the Phase 1 check
@@ -58,9 +60,12 @@ uvicorn server.main:app --reload      # then open http://localhost:8000 in a bro
 docker compose up --build
 ```
 
-Brings up `gateway`, `stt`, `tts`, `llm` (Ollama), `frontend` — visit `http://localhost` (Next.js client, connects directly to the gateway's `/ws` on port 8000). First run needs a model pulled into the Ollama container:
+Brings up `gateway`, `stt`, `tts`, `frontend` — visit `http://localhost` (Next.js client, connects directly to the gateway's `/ws` on port 8000). LLM defaults to OpenAI (needs `OPENAI_API_KEY` in `.env`).
+
+To use self-hosted Ollama instead, set `LLM_BACKEND=ollama` and `LLM_ENDPOINT=http://llm:11434` in `.env` — the compose file still defines the `llm` (Ollama) service, it's just not started by default. Bring it up explicitly and pull a model:
 
 ```bash
+docker compose up --build llm
 docker compose exec llm ollama pull llama3.2
 ```
 
@@ -98,15 +103,16 @@ Optimization order to try, cheapest first: quantization (`--quantization awq`/`f
 
 | Var | Purpose |
 |---|---|
-| `STT_BACKEND` / `LLM_BACKEND` / `TTS_BACKEND` | which adapter implementation to load |
-| `LLM_ENDPOINT` | Ollama (`:11434`) locally, vLLM endpoint on the GPU box |
+| `STT_BACKEND` / `LLM_BACKEND` / `TTS_BACKEND` | which adapter implementation to load (`LLM_BACKEND`: `openai` / `ollama` / `vllm`) |
+| `LLM_ENDPOINT` | `https://api.openai.com` by default; Ollama (`:11434`) or vLLM endpoint if self-hosting |
+| `OPENAI_API_KEY` | required for `LLM_BACKEND=openai` |
 | `LLM_MODEL`, `WHISPER_MODEL`, `TTS_VOICE` | model selection per stage |
 | `CODEC_ENABLED` | toggle Encodec compression on the audio path |
 | `DEVICE` | `cpu` / `mps` (Mac) / `cuda` (GPU box) |
 
 ## Stack
 
-STT: faster-whisper · LLM: Ollama → vLLM · TTS: Kokoro/Piper · Codec: Encodec
+STT: faster-whisper · LLM: OpenAI (self-hosted Ollama/vLLM optional) · TTS: Kokoro/Piper · Codec: Encodec
 Transport: FastAPI + WebSocket · Frontend: vanilla JS/Canvas · Eval: jiwer, NISQA
 
 All models open-source/open-weight, self-hosted — no closed API calls.
