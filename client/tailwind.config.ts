@@ -21,6 +21,14 @@ const config: Config = {
       boxShadow: {
         ambient: "0 8px 24px rgba(0, 0, 0, 0.08)",
       },
+      keyframes: {
+        "fade-in": { from: { opacity: "0" }, to: { opacity: "1" } },
+        "slide-up": { from: { transform: "translateY(100%)" }, to: { transform: "translateY(0)" } },
+      },
+      animation: {
+        "fade-in": "fade-in 300ms ease-out",
+        "slide-up": "slide-up 250ms cubic-bezier(0.2, 0.8, 0.2, 1)",
+      },
     },
   },
   plugins: [],

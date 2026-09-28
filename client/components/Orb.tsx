@@ -42,14 +42,14 @@ const PUFFS = [
 // outside the sphere before it wraps, so clouds never pop in or out on the visible face.
 const WRAP = 4.6;
 
-const SIZE = 240;
-
 export function Orb({
   state,
   interruptTick,
   getLevel,
+  size = 240,
 }: {
   state: DisplayState;
+  size?: number;
   interruptTick?: number;
   getLevel?: () => number;
 }) {
@@ -71,8 +71,8 @@ export function Orb({
     if (!ctx) return;
 
     const dpr = window.devicePixelRatio || 1;
-    canvas.width = SIZE * dpr;
-    canvas.height = SIZE * dpr;
+    canvas.width = size * dpr;
+    canvas.height = size * dpr;
     ctx.scale(dpr, dpr);
 
     const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -90,8 +90,8 @@ export function Orb({
     const tick = (now: number) => {
       const dt = Math.min(0.05, (now - last) / 1000); // real time, clamped after tab-switch stalls
       last = now;
-      const cx = SIZE / 2;
-      const cy = SIZE / 2;
+      const cx = size / 2;
+      const cy = size / 2;
       const current = stateRef.current;
       const goal = STATE_CONFIG[current];
       const ease = 1 - Math.exp(-dt * 3); // ~0.3s blend between states, frame-rate independent
@@ -99,7 +99,7 @@ export function Orb({
       cfg.cloudAlpha += (goal.cloudAlpha - cfg.cloudAlpha) * ease;
       cfg.flow += (goal.flow - cfg.flow) * ease;
       cfg.pulse += (goal.pulse - cfg.pulse) * ease;
-      const baseR = SIZE * 0.36;
+      const baseR = size * 0.36;
 
       const target = current === "disconnected" ? 0 : (levelFnRef.current?.() ?? 0);
       const k = target > level ? 12 : 3; // fast attack, slow release
@@ -107,7 +107,7 @@ export function Orb({
       const breathe = 1 + 0.015 * Math.sin(t * 1.2); // tiny idle breath so it never looks frozen
       const R = baseR * (breathe + level * cfg.pulse * motionScale);
 
-      ctx.clearRect(0, 0, SIZE, SIZE);
+      ctx.clearRect(0, 0, size, size);
 
       ctx.save();
       ctx.beginPath();
@@ -126,11 +126,11 @@ export function Orb({
       // Softness comes from the gradient falloff alone — no canvas blur filter, which is costly
       // per frame (dropped frames = stutter) and unsupported in Safari.
       flowPhase += dt * (cfg.flow + level * 0.1) * motionScale;
-      for (const [phase, y, size, wob] of PUFFS) {
+      for (const [phase, y, puffSize, wob] of PUFFS) {
         const x = ((phase + flowPhase) % WRAP) - WRAP / 2;
         const px = cx + x * R;
         const py = cy + (y + 0.06 * Math.sin(t * 0.6 + wob)) * R;
-        const pr = size * R * (1 + 0.08 * Math.sin(t * 0.9 + wob));
+        const pr = puffSize * R * (1 + 0.08 * Math.sin(t * 0.9 + wob));
         const g = ctx.createRadialGradient(px, py, 0, px, py, pr);
         g.addColorStop(0, rgba(WHITE, cfg.cloudAlpha));
         g.addColorStop(0.35, rgba(WHITE, cfg.cloudAlpha * 0.7));
@@ -178,12 +178,12 @@ export function Orb({
 
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, []);
+  }, [size]);
 
   return (
     <canvas
       ref={canvasRef}
-      style={{ width: SIZE, height: SIZE }}
+      style={{ width: size, height: size }}
       aria-label={`voice agent state: ${state}`}
     />
   );

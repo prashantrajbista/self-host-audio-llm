@@ -60,4 +60,8 @@ export class Player {
   stopAll(): void {
     this.nextTime = this.ctx.currentTime;
   }
+
+  close(): void {
+    void this.ctx.close();
+  }
 }
