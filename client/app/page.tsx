@@ -11,6 +11,8 @@ import { feedbackEnabled, setFeedbackEnabled } from "@/lib/feedback";
 import { useVoiceSession } from "@/lib/useVoiceSession";
 import { DEFAULT_VOICE, loadVoice, saveVoice, type Voice } from "@/lib/voices";
 
+const LATENCY_KEY = "show-latency";
+
 const PROMPTS = ["Plan my day", "Explain something simply", "Practice a conversation"];
 
 const STATE_LABEL = {
@@ -30,6 +32,7 @@ export default function Home() {
     error,
     interruptTick,
     muted,
+    latency,
     connect,
     endCall,
     interrupt,
@@ -41,10 +44,16 @@ export default function Home() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [voice, setVoice] = useState<Voice>(DEFAULT_VOICE);
+  const [showLatency, setShowLatency] = useState(false);
 
   // read after mount: localStorage isn't available during server render
   useEffect(() => {
     setVoice(loadVoice());
+    try {
+      setShowLatency(localStorage.getItem(LATENCY_KEY) === "on");
+    } catch {
+      // storage blocked: badge stays hidden by default
+    }
   }, []);
   // a dropped call stays in the call view (grey orb + Reconnect) so captions and history survive
   const inCall = connecting || state !== "disconnected" || error === "dropped";
@@ -63,6 +72,47 @@ export default function Home() {
     setVoice(v);
     saveVoice(v);
   };
+
+  const toggleLatency = () => {
+    setShowLatency((on) => {
+      try {
+        localStorage.setItem(LATENCY_KEY, on ? "off" : "on");
+      } catch {
+        // storage blocked: the setting just won't persist
+      }
+      return !on;
+    });
+  };
+
+  // Keyboard shortcuts. Re-registered each render so handlers see current state. Skipped while a
+  // sheet is open (the dialog owns Esc/focus) and in text fields; Space/Enter on a focused button
+  // are left to the button's native click so they don't fire twice.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (document.querySelector("dialog[open]")) return;
+      const target = e.target as HTMLElement;
+      if (target.closest("input, textarea, select, [contenteditable]")) return;
+      const onButton = target.closest("button") !== null;
+      const key = e.key.toLowerCase();
+
+      if (!inCall) {
+        if (key === "enter" && !onButton) {
+          e.preventDefault();
+          start(null);
+        }
+        return;
+      }
+      if (key === " " && !onButton) {
+        e.preventDefault();
+        toggleMute();
+      } else if (key === "escape") hangUp();
+      else if (key === "h") setHistoryOpen(true);
+      else if (key === "d") toggleLatency();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
 
   if (!inCall) {
     return (
@@ -122,6 +172,14 @@ export default function Home() {
   return (
     <main className="min-h-dvh flex flex-col items-center bg-bg px-4 font-sans motion-safe:animate-fade-in">
       <FeedbackToggle />
+      {showLatency && (
+        <p
+          title="Time from end of your turn to first reply audio (excludes the silence wait before the turn ends and device playback delay)"
+          className="fixed top-6 left-4 text-xs text-ink-secondary tabular-nums"
+        >
+          {latency ? `first audio ${Math.round(latency.last)} ms · avg ${Math.round(latency.avg)} ms` : "first audio —"}
+        </p>
+      )}
       <div className="flex-1 w-full flex flex-col items-center justify-center gap-6">
         <button
           onClick={interrupt}
@@ -151,6 +209,9 @@ export default function Home() {
         onHistory={() => setHistoryOpen(true)}
         onEnd={hangUp}
       />
+      <p className="hidden [@media(pointer:fine)]:block -mt-4 pb-4 text-xs text-ink-secondary">
+        Space mute · H history · Esc end · D latency
+      </p>
       <HistoryDrawer open={historyOpen} onClose={() => setHistoryOpen(false)} turns={turns} />
     </main>
   );

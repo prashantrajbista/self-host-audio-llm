@@ -23,6 +23,9 @@ export function useVoiceSession() {
   const [error, setError] = useState<ErrorKind | null>(null);
   const [interruptTick, setInterruptTick] = useState(0);
   const [muted, setMuted] = useState(false);
+  // time from "thinking" to first reply audio, ms: last turn + running average for this call
+  const [latency, setLatency] = useState<{ last: number; avg: number; count: number } | null>(null);
+  const thinkingAtRef = useRef<number | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
   const playerRef = useRef<Player | null>(null);
   const micRef = useRef<Mic | null>(null);
@@ -65,6 +68,8 @@ export function useVoiceSession() {
     ({ voice, keepTurns = false }: { voice?: string; keepTurns?: boolean } = {}) => {
       setError(null);
       if (!keepTurns) setTurns([]);
+      setLatency(null);
+      thinkingAtRef.current = null;
       setConnecting(true);
       playerRef.current = new Player(24000);
       let opened = false;
@@ -92,7 +97,11 @@ export function useVoiceSession() {
             feedback("error");
           }
         },
-        onState: (s) => setState(s),
+        onState: (s) => {
+          if (s === "thinking") thinkingAtRef.current = performance.now();
+          else if (s !== "speaking") thinkingAtRef.current = null; // turn ended without audio: don't count it
+          setState(s);
+        },
         onPartialTranscript: (text) => setTurns((t) => [...t, { role: "user", text }]),
         onToken: (text) =>
           setTurns((t) => {
@@ -104,7 +113,17 @@ export function useVoiceSession() {
           playerRef.current?.stopAll();
           setInterruptTick((t) => t + 1);
         },
-        onAudioChunk: (chunk) => playerRef.current?.playChunk(chunk),
+        onAudioChunk: (chunk) => {
+          if (thinkingAtRef.current !== null) {
+            const ms = performance.now() - thinkingAtRef.current;
+            thinkingAtRef.current = null;
+            setLatency((l) => {
+              const count = (l?.count ?? 0) + 1;
+              return { last: ms, avg: ((l?.avg ?? 0) * (count - 1) + ms) / count, count };
+            });
+          }
+          playerRef.current?.playChunk(chunk);
+        },
         onClose: () => {
           // only an unexpected close lands here: hang-ups and failures null socketRef first, and a
           // stale socket closing after a new call started must not tear that call down
@@ -151,6 +170,7 @@ export function useVoiceSession() {
     error,
     interruptTick,
     muted,
+    latency,
     connect,
     endCall,
     interrupt,
