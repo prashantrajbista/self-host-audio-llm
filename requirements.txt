@@ -8,3 +8,5 @@ fastapi
 uvicorn[standard]
 websockets
 silero-vad
+nvidia-cublas-cu12
+nvidia-cudnn-cu12
