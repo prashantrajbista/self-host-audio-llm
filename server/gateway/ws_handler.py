@@ -1,3 +1,4 @@
+import json
 import logging
 
 from fastapi import WebSocket, WebSocketDisconnect
@@ -33,12 +34,20 @@ async def websocket_endpoint(ws: WebSocket) -> None:
     buffer = bytearray()
     try:
         while True:
-            chunk = await ws.receive_bytes()
-            buffer.extend(chunk)
-            while len(buffer) >= FRAME_BYTES:
-                frame = bytes(buffer[:FRAME_BYTES])
-                del buffer[:FRAME_BYTES]
-                await session.handle_audio_frame(frame)
+            # binary frames = mic audio; text frames = JSON control messages from the client
+            message = await ws.receive()
+            if message["type"] == "websocket.disconnect":
+                raise WebSocketDisconnect(message.get("code", 1000))
+            if message.get("bytes") is not None:
+                buffer.extend(message["bytes"])
+                while len(buffer) >= FRAME_BYTES:
+                    frame = bytes(buffer[:FRAME_BYTES])
+                    del buffer[:FRAME_BYTES]
+                    await session.handle_audio_frame(frame)
+            elif message.get("text") is not None:
+                control = json.loads(message["text"])
+                if control.get("type") == "interrupt":
+                    await session.interrupt()
     except WebSocketDisconnect:
         logger.info("client disconnected: %s", client)
     except Exception:

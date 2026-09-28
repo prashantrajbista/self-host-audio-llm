@@ -219,18 +219,35 @@ class VoiceSession:
                 break
             await self._send_bytes(chunk)
 
-    async def _barge_in(self) -> None:
-        logger.info("barge-in detected")
+    async def _stop_turn(self) -> None:
+        """Cancel whatever turn is in flight: LLM stream, turn task (and its TTS), speculative STT."""
         self._interrupt.set()
         await self._llm.cancel()
         if self._turn_task:
             self._turn_task.cancel()
         self._cancel_speculative_stt()
+
+    async def _barge_in(self) -> None:
+        logger.info("barge-in detected")
+        await self._stop_turn()
         await self._send_json({"type": "interrupt"})
         self._audio_buffer.clear()
         self._speech_started = True
         self._silence_frames = 0
         await self._set_state("listening")
+
+    async def interrupt(self) -> None:
+        """Client-initiated stop (tap on the orb): drop the current reply and wait for new speech.
+        No-op when nothing is in flight. The client already stopped its own playback."""
+        if self.state not in ("thinking", "speaking"):
+            return
+        logger.info("client interrupt")
+        await self._stop_turn()
+        self._audio_buffer.clear()
+        self._pending_frames.clear()
+        self._speech_started = False
+        self._silence_frames = 0
+        await self._set_state("idle")
 
     def close(self) -> None:
         """Connection gone: stop in-flight work so it doesn't keep running and sending to a dead socket."""

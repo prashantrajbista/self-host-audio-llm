@@ -46,18 +46,22 @@ export function Orb({
   state,
   interruptTick,
   getLevel,
+  getMicLevel,
   size = 240,
 }: {
   state: DisplayState;
   size?: number;
   interruptTick?: number;
   getLevel?: () => number;
+  getMicLevel?: () => number;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const stateRef = useRef<DisplayState>(state);
   stateRef.current = state;
   const levelFnRef = useRef(getLevel);
   levelFnRef.current = getLevel;
+  const micLevelFnRef = useRef(getMicLevel);
+  micLevelFnRef.current = getMicLevel;
   const flashRef = useRef(0); // 0 = no flash; 1 = just fired, decays to 0
 
   useEffect(() => {
@@ -82,6 +86,7 @@ export function Orb({
     let flowPhase = 0; // integrated, so speed changes never make clouds jump
     let spin = 0;
     let level = 0; // smoothed audio level
+    let micLevel = 0; // smoothed mic-only level, for the "you're being heard" ring
     let last = performance.now();
     let raf = 0;
     // live config, eased toward the target state's config each frame
@@ -150,6 +155,19 @@ export function Orb({
       ctx.fillRect(cx - R, cy - R, R * 2, R * 2);
 
       ctx.restore();
+
+      // mic ring: reacts only to the user's voice, so "I'm being heard" reads separately from the
+      // sphere swelling with the reply. Capped inside the canvas.
+      const mic = current === "disconnected" ? 0 : (micLevelFnRef.current?.() ?? 0);
+      micLevel += (mic - micLevel) * (1 - Math.exp(-dt * (mic > micLevel ? 14 : 4)));
+      if (micLevel > 0.02) {
+        const lineWidth = 2 + micLevel * 3;
+        ctx.beginPath();
+        ctx.arc(cx, cy, Math.min(R * 1.08 + micLevel * baseR * 0.18, size / 2 - lineWidth), 0, Math.PI * 2);
+        ctx.strokeStyle = rgba(cfg.sky[1], Math.min(0.9, micLevel * 1.5));
+        ctx.lineWidth = lineWidth;
+        ctx.stroke();
+      }
 
       if (current === "connecting" && !reduceMotion) {
         spin += dt * 5;

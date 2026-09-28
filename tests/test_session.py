@@ -117,6 +117,25 @@ async def main():
     assert session3.state == "listening", session3.state
     print("barge-in during thinking PASS")
 
+    # --- client tap-to-interrupt: cancels the in-flight turn and returns to idle ---
+    events.clear()
+    session4 = VoiceSession(
+        stt=FakeSTT(), llm=FakeLLM(), tts=FakeTTS(), vad=FakeVAD(),
+        send_json=send_json, send_bytes=send_bytes,
+    )
+    session4.state = "speaking"
+    session4._turn_task = asyncio.create_task(asyncio.sleep(10))
+    await session4.interrupt()
+    await asyncio.sleep(0)
+    assert session4._turn_task.cancelled()
+    assert session4._llm.cancelled
+    assert session4.state == "idle", session4.state
+    session4.state = "idle"
+    events.clear()
+    await session4.interrupt()  # nothing in flight: no-op
+    assert not events, events
+    print("client interrupt PASS")
+
     # --- TTS chunking: split on sentence end + whitespace, first chunk may end at a clause ---
     assert _split_speakable("costs 3.5 dollars", False) is None
     assert _split_speakable("Hi there. How", False) == ("Hi there. ", "How")

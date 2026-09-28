@@ -31,6 +31,7 @@ export function audioLevel(analyser: AnalyserNode | null): number {
 export class Player {
   private ctx: AudioContext;
   private nextTime: number;
+  private sources = new Set<AudioBufferSourceNode>();
   readonly analyser: AnalyserNode;
 
   constructor(sampleRate = 24000) {
@@ -51,13 +52,19 @@ export class Player {
     const src = this.ctx.createBufferSource();
     src.buffer = buf;
     src.connect(this.analyser);
+    this.sources.add(src);
+    src.onended = () => this.sources.delete(src);
 
     const startAt = Math.max(this.ctx.currentTime, this.nextTime);
     src.start(startAt);
     this.nextTime = startAt + buf.duration;
   }
 
+  // Stop what's already scheduled, not just future chunks — otherwise queued audio keeps playing
+  // for seconds after an interrupt.
   stopAll(): void {
+    this.sources.forEach((src) => src.stop());
+    this.sources.clear();
     this.nextTime = this.ctx.currentTime;
   }
 

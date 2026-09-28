@@ -3,8 +3,11 @@
 import { useCallback, useRef, useState } from "react";
 import { connectVoiceSocket, gatewayWsUrl, type OrbState } from "./ws";
 import { Player, audioLevel, startMic } from "./audio";
+import { feedback } from "./feedback";
 
 export type SessionState = OrbState | "disconnected";
+// mic/no-mic: couldn't get the microphone; unreachable: socket never opened; dropped: lost mid-call
+export type ErrorKind = "mic" | "no-mic" | "unreachable" | "dropped";
 
 export interface Turn {
   role: "user" | "assistant";
@@ -17,17 +20,19 @@ export function useVoiceSession() {
   const [state, setState] = useState<SessionState>("disconnected");
   const [turns, setTurns] = useState<Turn[]>([]);
   const [connecting, setConnecting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ErrorKind | null>(null);
   const [interruptTick, setInterruptTick] = useState(0);
   const [muted, setMuted] = useState(false);
   const socketRef = useRef<WebSocket | null>(null);
   const playerRef = useRef<Player | null>(null);
   const micRef = useRef<Mic | null>(null);
 
-  // Louder of mic and playback, 0..1 — polled per animation frame by the orb, not React state.
+  // Levels 0..1, polled per animation frame by the orb, not React state. getLevel (louder of the
+  // two) drives the sphere; getMicLevel alone drives the "you're being heard" ring.
+  const getMicLevel = useCallback(() => audioLevel(micRef.current?.analyser ?? null), []);
   const getLevel = useCallback(
-    () => Math.max(audioLevel(micRef.current?.analyser ?? null), audioLevel(playerRef.current?.analyser ?? null)),
-    [],
+    () => Math.max(getMicLevel(), audioLevel(playerRef.current?.analyser ?? null)),
+    [getMicLevel],
   );
 
   // Release mic + audio output. Shared by user hang-up and dropped connections, so the mic never
@@ -42,70 +47,93 @@ export function useVoiceSession() {
     setMuted(false);
   }, []);
 
-  const connect = useCallback(() => {
-    setError(null);
-    setTurns([]);
-    setConnecting(true);
-    const player = new Player(24000);
-    playerRef.current = player;
+  // End the current socket without its onClose treating it as a drop; shared by hang-up and failures.
+  const closeSession = useCallback(
+    (nextError: ErrorKind | null) => {
+      const socket = socketRef.current;
+      socketRef.current = null;
+      socket?.close();
+      teardown();
+      setState("disconnected");
+      setConnecting(false);
+      setError(nextError);
+    },
+    [teardown],
+  );
 
-    const socket = connectVoiceSocket(gatewayWsUrl(), {
-      onOpen: async () => {
-        try {
-          const mic = await startMic((pcm16) => {
-            if (socket.readyState === WebSocket.OPEN) socket.send(pcm16);
-          });
-          // call ended while the permission prompt was open: release the mic we just got
-          if (socketRef.current !== socket) {
-            mic.stream.getTracks().forEach((t) => t.stop());
-            void mic.ctx.close();
-            return;
+  const connect = useCallback(
+    ({ keepTurns = false }: { keepTurns?: boolean } = {}) => {
+      setError(null);
+      if (!keepTurns) setTurns([]);
+      setConnecting(true);
+      playerRef.current = new Player(24000);
+      let opened = false;
+
+      const socket = connectVoiceSocket(gatewayWsUrl(), {
+        onOpen: async () => {
+          opened = true;
+          try {
+            const mic = await startMic((pcm16) => {
+              if (socket.readyState === WebSocket.OPEN) socket.send(pcm16);
+            });
+            // call ended while the permission prompt was open: release the mic we just got
+            if (socketRef.current !== socket) {
+              mic.stream.getTracks().forEach((t) => t.stop());
+              void mic.ctx.close();
+              return;
+            }
+            micRef.current = mic;
+            setState("idle");
+            setConnecting(false);
+            feedback("connect");
+          } catch (err) {
+            if (socketRef.current !== socket) return;
+            closeSession(err instanceof DOMException && err.name === "NotFoundError" ? "no-mic" : "mic");
+            feedback("error");
           }
-          micRef.current = mic;
-          setState("idle");
-          setConnecting(false);
-        } catch {
-          setError("Microphone access denied.");
-          socket.close();
-        }
-      },
-      onState: (s) => setState(s),
-      onPartialTranscript: (text) => setTurns((t) => [...t, { role: "user", text }]),
-      onToken: (text) =>
-        setTurns((t) => {
-          const last = t[t.length - 1];
-          if (last?.role === "assistant") return [...t.slice(0, -1), { ...last, text: last.text + text }];
-          return [...t, { role: "assistant", text }];
-        }),
-      onInterrupt: () => {
-        playerRef.current?.stopAll();
-        setInterruptTick((t) => t + 1);
-      },
-      onAudioChunk: (chunk) => playerRef.current?.playChunk(chunk),
-      onClose: () => {
-        // a stale socket closing (user hung up, then started a new call) must not tear down the new one
-        if (socketRef.current !== socket) return;
-        socketRef.current = null;
-        teardown();
-        setState("disconnected");
-        setConnecting(false);
-      },
-      onError: () => {
-        if (socketRef.current === socket) setError("Connection lost.");
-      },
-    });
+        },
+        onState: (s) => setState(s),
+        onPartialTranscript: (text) => setTurns((t) => [...t, { role: "user", text }]),
+        onToken: (text) =>
+          setTurns((t) => {
+            const last = t[t.length - 1];
+            if (last?.role === "assistant") return [...t.slice(0, -1), { ...last, text: last.text + text }];
+            return [...t, { role: "assistant", text }];
+          }),
+        onInterrupt: () => {
+          playerRef.current?.stopAll();
+          setInterruptTick((t) => t + 1);
+        },
+        onAudioChunk: (chunk) => playerRef.current?.playChunk(chunk),
+        onClose: () => {
+          // only an unexpected close lands here: hang-ups and failures null socketRef first, and a
+          // stale socket closing after a new call started must not tear that call down
+          if (socketRef.current !== socket) return;
+          closeSession(opened ? "dropped" : "unreachable");
+          feedback("error");
+        },
+        onError: () => {}, // always followed by onClose, which classifies the failure
+      });
 
-    socketRef.current = socket;
-  }, [teardown]);
+      socketRef.current = socket;
+    },
+    [teardown, closeSession],
+  );
 
   const endCall = useCallback(() => {
+    if (socketRef.current) feedback("end");
+    closeSession(null);
+  }, [closeSession]);
+
+  // Tap-to-interrupt: cut playback locally right away, then tell the server to drop the turn.
+  const interrupt = useCallback(() => {
     const socket = socketRef.current;
-    socketRef.current = null;
-    socket?.close();
-    teardown();
-    setState("disconnected");
-    setConnecting(false);
-  }, [teardown]);
+    if (socket?.readyState !== WebSocket.OPEN) return;
+    playerRef.current?.stopAll();
+    socket.send(JSON.stringify({ type: "interrupt" }));
+    setInterruptTick((t) => t + 1);
+    feedback("interrupt");
+  }, []);
 
   // Disabling the track makes the mic source emit silence: the server's VAD just sees no speech,
   // the connection stays up, and the orb's mic level drops to zero.
@@ -116,5 +144,18 @@ export function useVoiceSession() {
     setMuted(!track.enabled);
   }, []);
 
-  return { state, turns, connecting, error, interruptTick, muted, connect, endCall, toggleMute, getLevel };
+  return {
+    state,
+    turns,
+    connecting,
+    error,
+    interruptTick,
+    muted,
+    connect,
+    endCall,
+    interrupt,
+    toggleMute,
+    getLevel,
+    getMicLevel,
+  };
 }
