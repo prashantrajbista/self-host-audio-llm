@@ -19,6 +19,7 @@ _MD_LINK = re.compile(r"\[([^\]]*)\]\([^)]*\)")
 _MD_HEADING = re.compile(r"^#{1,6}\s*", re.MULTILINE)
 _MD_LIST_BULLET = re.compile(r"^\s*[-*+]\s+", re.MULTILINE)
 _MD_EMPHASIS = re.compile(r"[*_`~]+")
+_WHITESPACE = re.compile(r"\s+")
 
 
 def _strip_markdown(text: str) -> str:
@@ -29,6 +30,9 @@ def _strip_markdown(text: str) -> str:
     text = _MD_HEADING.sub("", text)
     text = _MD_LIST_BULLET.sub("", text)
     text = _MD_EMPHASIS.sub("", text)
+    # collapse after the ^-anchored substitutions above, which rely on real newlines —
+    # Kokoro produces glitchy audio on literal \n mid-utterance, so it can't reach TTS raw
+    text = _WHITESPACE.sub(" ", text).strip()
     return text
 
 

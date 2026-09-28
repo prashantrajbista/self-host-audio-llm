@@ -5,12 +5,13 @@ Run: python -m tests.test_markdown_strip
 from server.gateway.session import _strip_markdown
 
 CASES = [
-    ("# Heading\nBody text.", "Heading\nBody text."),
+    ("# Heading\nBody text.", "Heading Body text."),
     ("Some **bold** and _italic_ text.", "Some bold and italic text."),
-    ("- first\n- second", "first\nsecond"),
+    ("- first\n- second", "first second"),
     ("Check the `code` here.", "Check the code here."),
     ("See [the docs](https://example.com) for more.", "See the docs for more."),
     ("Plain sentence, nothing to strip.", "Plain sentence, nothing to strip."),
+    ("Line one\n\nLine two\nLine three", "Line one Line two Line three"),
 ]
 
 
