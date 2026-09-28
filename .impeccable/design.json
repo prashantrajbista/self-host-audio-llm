@@ -1,0 +1,87 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-09-28T04:00:00Z",
+  "title": "Design System: Voice Agent",
+  "extensions": {
+    "colorMeta": {
+      "neutral-bg": { "role": "neutral", "displayName": "Apple off-white", "canonical": "#f5f5f7" },
+      "neutral-surface": { "role": "neutral", "displayName": "Pure white surface", "canonical": "#ffffff" },
+      "text-primary": { "role": "neutral", "displayName": "Near-black (Apple label color)", "canonical": "#1d1d1f" },
+      "text-secondary": { "role": "neutral", "displayName": "Secondary gray", "canonical": "#6e6e73" },
+      "border": { "role": "neutral", "displayName": "Border gray", "canonical": "#d2d2d7" },
+      "primary": { "role": "primary", "displayName": "Deep Teal", "canonical": "#00695c" },
+      "primary-hover": { "role": "primary", "displayName": "Deep Teal (pressed, darker)", "canonical": "#004d40" },
+      "state-idle": { "role": "state", "displayName": "Orb: idle (pale mint → muted teal)", "canonical": "#80cbc4" },
+      "state-listening": { "role": "state", "displayName": "Orb: listening (mint → teal)", "canonical": "#26a69a" },
+      "state-thinking": { "role": "state", "displayName": "Orb: thinking (deep teal)", "canonical": "#00695c" },
+      "state-speaking": { "role": "state", "displayName": "Orb: speaking (vivid emerald)", "canonical": "#00bfa5" },
+      "state-disconnected": { "role": "state", "displayName": "Orb: disconnected (neutral gray)", "canonical": "#c9c9c9" },
+      "state-connecting": { "role": "state", "displayName": "Orb: connecting (teal + rotating arc)", "canonical": "#26a69a" },
+      "text-error": { "role": "neutral", "displayName": "System Red", "canonical": "#ff3b30" },
+      "text-link": { "role": "neutral", "displayName": "System Blue (link)", "canonical": "#007aff" }
+    },
+    "typographyMeta": {
+      "headline-lg": { "displayName": "Headline LG", "purpose": "Reserved for a page title; unused live." },
+      "headline-md": { "displayName": "Headline MD", "purpose": "Markdown h1 in the transcript." },
+      "headline-sm": { "displayName": "Headline SM", "purpose": "Markdown h2/h3 in the transcript (semibold)." },
+      "body": { "displayName": "Body", "purpose": "Transcript paragraph text, Apple's 17px canonical size." },
+      "label": { "displayName": "Label", "purpose": "Button and helper-line text, semibold." }
+    },
+    "shadows": [
+      { "name": "ambient", "value": "0 8px 24px rgba(0, 0, 0, 0.08)", "purpose": "Soft-only elevation for chrome (cards/panels). The orb is a named exception to this rule, not governed by it — see DESIGN.md Elevation & Depth." }
+    ],
+    "motion": [
+      { "name": "orb-sphere", "value": "fixed-size crisp-edged circle, lit-sphere radial base gradient (no blur) plus 2 blurred internal cloud layers clipped to the same circular path so blur never bleeds past the edge, additive blend", "purpose": "ChatGPT-realtime-voice-orb reference, recolored teal (deep teal → pale mint, not orange)." },
+      { "name": "orb-breathing", "value": "internal cloud opacity oscillates per state (breathSpeed/breathMin/breathMax in STATE_CONFIG), fastest/highest-amplitude while speaking", "purpose": "\"Color coming and going while talking\" — the internal light visibly pulses rather than sitting static. Differentiation across states is breathing speed/amplitude and cloud-drift speed, not hue." },
+      { "name": "orb-connecting-spin", "value": "rotating arc, 270° sweep, ~0.08 rad/frame, color #00897b", "purpose": "Shape cue for connecting, since the teal sphere alone can't carry a 5th distinct hue-based state." },
+      { "name": "orb-interrupt-flash", "value": "expanding ink-colored ring, rgba(29,29,31,…), decays over ~25 frames", "purpose": "Visible against both the white ground and the teal sphere, where white or teal would each disappear into one of the two." }
+    ],
+    "breakpoints": []
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The only button in the app: starts/shows the voice connection. Flat deep-teal fill with white text, distinct from the orb's soft glow.",
+      "html": "<button class=\"ds-btn-primary\">Start talking</button>",
+      "css": ".ds-btn-primary { background: #00695c; color: #ffffff; padding: 12px 28px; border-radius: 9999px; font-weight: 600; font-size: 0.9375rem; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif; border: none; transition: background-color 0.15s; } .ds-btn-primary:hover { background: #004d40; } .ds-btn-primary:disabled { background: #d2d2d7; color: #6e6e73; cursor: not-allowed; }"
+    },
+    {
+      "name": "Transcript Text",
+      "kind": "custom",
+      "refersTo": "body",
+      "description": "Centered markdown-rendered text block showing the live streamed reply.",
+      "html": "<div class=\"ds-transcript\">Plain text or <strong>markdown</strong> content.</div>",
+      "css": ".ds-transcript { max-width: 28rem; min-height: 2.5em; text-align: center; color: #1d1d1f; font-size: 1.0625rem; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif; line-height: 1.5; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "System Preferences, with a Realtime Orb",
+    "overview": "White-dominant surface built from Apple's own visual vocabulary (SF system font stack, near-black text, off-white ground), fused with the soft, morphing, glowing sphere from ChatGPT's realtime voice mode, rebuilt in teal. Teal is the one committed color family, carried by both the primary button (flat, white text) and the orb (a glowing deep-teal-to-pale-mint sphere) rather than diluted across unrelated hues. Pipeline states differentiate through motion and brightness, not hue-swapping. Third color pass on this surface — superseded a dark Tailwind baseline, then a multi-hue Apple-System-Colors pass, then a warm-orange version.",
+    "keyCharacteristics": [
+      "White-dominant (#f5f5f7 ground, #ffffff surfaces), no dark mode",
+      "Teal (#00695c family) is the single committed color, carried by both the button and the orb",
+      "The orb is a solid sphere with a crisp edge and soft internal cloud-light movement, not a flat pulsing circle",
+      "Pipeline states differentiate through motion character and brightness, not hue",
+      "Minimal elsewhere: few colors outside the orb, generous whitespace, soft shadows only where earned"
+    ],
+    "rules": [
+      { "name": "The One Family Rule", "body": "Teal is the surface's only saturated color family, carried by the button (flat #00695c) and the orb (a #004d40–#e0f7fa gradient range). The orb's internal tonal range is the same family at different lightness, not a second accent.", "section": "colors" },
+      { "name": "The Light-on-Teal Rule", "body": "Near-black text on #00695c measures only ~3.90:1, under the 4.5:1 floor. White text measures ~6.61:1. Unlike the prior orange pass, this button uses white text — recompute contrast per hue, don't carry a rule forward blind.", "section": "colors" },
+      { "name": "The Soft-Only Rule, for chrome", "body": "Where a UI surface (card/panel) needs depth, it is a large, low-opacity, blur-only shadow — never a hard offset or colored glow. The orb is a named exception: it's content/identity, not chrome.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do treat this file as the committed, built direction.",
+      "Do keep teal the only saturated color family — the orb's tonal range doesn't violate this.",
+      "Do keep pipeline state legible through motion/brightness, not a new hue, when extending states.",
+      "Do recompute contrast per hue before reusing a text-color rule from a prior palette pass."
+    ],
+    "donts": [
+      "Don't add a color outside the teal family anywhere (link blue is the one named exception).",
+      "Don't put near-black text on #00695c — it fails the body-text contrast floor. Use white.",
+      "Don't apply the chrome Soft-Only shadow rule to the orb — it's the named exception, not a loophole.",
+      "Don't reintroduce hardcoded hex outside Orb.tsx (canvas needs real hex) — use the real Tailwind theme tokens everywhere else."
+    ]
+  }
+}
