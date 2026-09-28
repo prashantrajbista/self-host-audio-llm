@@ -14,7 +14,9 @@ class Settings(BaseSettings):
     llm_model: str = "gpt-4o-mini"
     openai_api_key: str = ""
     whisper_model: str = "base.en"
-    tts_voice: str = "af_heart"
+    tts_voice: str = "af_heart"  # default voice
+    # voices a client may pick per session (Kokoro American-English pipeline, lang_code "a")
+    tts_voices: list[str] = ["af_heart", "af_bella", "am_michael", "am_fenrir"]
 
     codec_enabled: bool = False
     device: str = "cpu"
@@ -28,3 +30,8 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
+
+
+def resolve_voice(settings: Settings, voice: str | None) -> str:
+    """Client-requested voice, if allowed; otherwise the configured default."""
+    return voice if voice in settings.tts_voices else settings.tts_voice

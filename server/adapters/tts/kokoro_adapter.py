@@ -8,18 +8,23 @@ from server.adapters.tts.base import TTSAdapter
 
 
 class KokoroAdapter(TTSAdapter):
-    def __init__(self, voice: str = "af_heart", lang_code: str = "a", device: str = "cpu"):
+    def __init__(
+        self, voice: str = "af_heart", lang_code: str = "a", device: str = "cpu", voices: tuple[str, ...] = ()
+    ):
         self._pipeline = KPipeline(lang_code=lang_code, device=device)
         self._voice = voice
         # one shared model across sessions: serialize inference steps rather than trusting the
         # pipeline to be thread-safe under concurrent calls
         self._lock = asyncio.Lock()
-        # warm-up: first synthesis pays voice load + lazy init; take it at load, not on the first reply
+        # warm-up: first synthesis pays voice load + lazy init; take it at load, not on the first reply.
+        # Preload every selectable voice too, so picking one never waits on a download.
+        for v in voices:
+            self._pipeline.load_voice(v)
         for _ in self._pipeline("Hello.", voice=voice):
             pass
 
-    async def synthesize_stream(self, text_chunk: str) -> AsyncIterator[bytes]:
-        results = self._pipeline(text_chunk, voice=self._voice)
+    async def synthesize_stream(self, text_chunk: str, voice: str | None = None) -> AsyncIterator[bytes]:
+        results = self._pipeline(text_chunk, voice=voice or self._voice)
         while True:
             # each generator step runs inference; step it in a worker thread so the event loop
             # keeps receiving mic frames (barge-in) while audio is being synthesized

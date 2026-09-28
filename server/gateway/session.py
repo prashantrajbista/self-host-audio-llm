@@ -81,10 +81,12 @@ class VoiceSession:
         vad: VAD,
         send_json: Callable[[dict], Awaitable[None]],
         send_bytes: Callable[[bytes], Awaitable[None]],
+        voice: str | None = None,
     ):
         self._stt = stt
         self._llm = llm
         self._tts = tts
+        self._voice = voice
         self._vad = vad
         self._send_json = send_json
         self._send_bytes = send_bytes
@@ -214,7 +216,7 @@ class VoiceSession:
         text = _strip_markdown(text)
         if not text.strip():
             return
-        async for chunk in self._tts.synthesize_stream(text):
+        async for chunk in self._tts.synthesize_stream(text, voice=self._voice):
             if self._interrupt.is_set():
                 break
             await self._send_bytes(chunk)

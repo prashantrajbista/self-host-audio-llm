@@ -10,9 +10,9 @@ class HTTPTTSAdapter(TTSAdapter):
     def __init__(self, endpoint: str):
         self._endpoint = endpoint
 
-    async def synthesize_stream(self, text_chunk: str) -> AsyncIterator[bytes]:
+    async def synthesize_stream(self, text_chunk: str, voice: str | None = None) -> AsyncIterator[bytes]:
         async with shared_client().stream(
-            "POST", f"{self._endpoint}/synthesize", json={"text": text_chunk}
+            "POST", f"{self._endpoint}/synthesize", json={"text": text_chunk, "voice": voice}
         ) as response:
             response.raise_for_status()
             async for chunk in response.aiter_bytes():

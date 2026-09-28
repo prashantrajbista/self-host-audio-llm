@@ -7,6 +7,7 @@ import asyncio
 from server.adapters.llm.base import LLMAdapter
 from server.adapters.stt.base import STTAdapter, TranscriptEvent
 from server.adapters.tts.base import TTSAdapter
+from server.config import Settings, resolve_voice
 from server.gateway.session import VoiceSession, _split_speakable
 
 SPEECH_FRAME = b"\x01" + b"\x00" * 639
@@ -39,7 +40,7 @@ class FakeLLM(LLMAdapter):
 
 
 class FakeTTS(TTSAdapter):
-    async def synthesize_stream(self, text_chunk: str):
+    async def synthesize_stream(self, text_chunk: str, voice: str | None = None):
         yield b"\x00\x01" * 10
 
 
@@ -144,6 +145,13 @@ async def main():
     assert _split_speakable("Yes I can, sure", True) == ("Yes I can, ", "sure")
     assert _split_speakable("Yes I can, sure", False) is None  # clause split is first-chunk only
     print("chunk splitting PASS")
+
+    # --- voice selection: allowed voices pass through, anything else falls back to the default ---
+    settings = Settings(tts_voice="af_heart", tts_voices=["af_heart", "am_michael"])
+    assert resolve_voice(settings, "am_michael") == "am_michael"
+    assert resolve_voice(settings, "../../etc/passwd") == "af_heart"
+    assert resolve_voice(settings, None) == "af_heart"
+    print("voice resolution PASS")
 
 
 if __name__ == "__main__":

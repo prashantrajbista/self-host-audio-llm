@@ -50,11 +50,12 @@ def get_llm(settings: Settings) -> LLMAdapter:
 
 def get_tts(settings: Settings) -> TTSAdapter:
     if settings.tts_backend == "kokoro":
-        key = ("kokoro", settings.tts_voice, settings.device)
+        voices = tuple(settings.tts_voices)
+        key = ("kokoro", settings.tts_voice, voices, settings.device)
         if key not in _tts_cache:
             from server.adapters.tts.kokoro_adapter import KokoroAdapter
 
-            _tts_cache[key] = KokoroAdapter(voice=settings.tts_voice, device=settings.device)
+            _tts_cache[key] = KokoroAdapter(voice=settings.tts_voice, device=settings.device, voices=voices)
         return _tts_cache[key]
     if settings.tts_backend == "remote":
         key = ("remote", settings.tts_endpoint)

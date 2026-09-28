@@ -3,7 +3,7 @@ import logging
 
 from fastapi import WebSocket, WebSocketDisconnect
 
-from server.config import get_settings
+from server.config import get_settings, resolve_voice
 from server.gateway.factory import get_llm, get_stt, get_tts
 from server.gateway.session import VoiceSession
 from server.vad.vad import VAD
@@ -19,8 +19,13 @@ async def websocket_endpoint(ws: WebSocket) -> None:
     logger.info("client connected: %s", client)
 
     settings = get_settings()
+    voice = resolve_voice(settings, ws.query_params.get("voice"))
     logger.debug(
-        "session backends: stt=%s llm=%s tts=%s", settings.stt_backend, settings.llm_backend, settings.tts_backend
+        "session backends: stt=%s llm=%s tts=%s voice=%s",
+        settings.stt_backend,
+        settings.llm_backend,
+        settings.tts_backend,
+        voice,
     )
     session = VoiceSession(
         stt=get_stt(settings),
@@ -29,6 +34,7 @@ async def websocket_endpoint(ws: WebSocket) -> None:
         vad=VAD(threshold=settings.vad_threshold),
         send_json=ws.send_json,
         send_bytes=ws.send_bytes,
+        voice=voice,
     )
 
     buffer = bytearray()
