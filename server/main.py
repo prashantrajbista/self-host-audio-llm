@@ -32,6 +32,15 @@ async def ws_route(websocket: WebSocket):
 
 _previews: dict[str, bytes] = {}
 
+# Preview lines written to each voice's personality (matches the client's voice descriptions).
+# Voices without an entry fall back to a generic intro.
+_PREVIEW_LINES = {
+    "af_heart": "Hey, I'm Heart. Pull up a chair and tell me what's on your mind. I'm all ears.",
+    "af_bella": "Hi, I'm Bella! Got a big idea or a tiny question? Either way, let's make it fun!",
+    "am_michael": "Hello, I'm Michael. Take your time. We'll work through it together, one step at a time.",
+    "am_fenrir": "I'm Fenrir. Whatever you're facing, we'll take it on steady and sure.",
+}
+
 
 @app.get("/voices/{voice}/preview")
 async def voice_preview(voice: str):
@@ -41,7 +50,7 @@ async def voice_preview(voice: str):
         raise HTTPException(status_code=404, detail="unknown voice")
     if voice not in _previews:
         name = voice.split("_", 1)[-1].capitalize()
-        line = f"Hi, I'm {name}. How can I help today?"
+        line = _PREVIEW_LINES.get(voice, f"Hi, I'm {name}. Nice to meet you.")
         pcm = bytearray()
         async for chunk in get_tts(settings).synthesize_stream(line, voice=voice):
             pcm.extend(chunk)
