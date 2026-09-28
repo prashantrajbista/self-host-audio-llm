@@ -6,13 +6,13 @@ import { ConnectButton } from "@/components/ConnectButton";
 import { useVoiceSession } from "@/lib/useVoiceSession";
 
 export default function Home() {
-  const { state, transcript, connecting, error, interruptTick, connect } = useVoiceSession();
+  const { state, transcript, connecting, error, interruptTick, connect, getLevel } = useVoiceSession();
   const connected = state !== "disconnected";
   const orbState = connecting ? "connecting" : state;
 
   return (
     <main className="min-h-screen flex flex-col items-center justify-center gap-8 bg-bg px-4 font-sans">
-      <Orb state={orbState} interruptTick={interruptTick} />
+      <Orb state={orbState} interruptTick={interruptTick} getLevel={getLevel} />
       <div className="flex flex-col items-center gap-2">
         <ConnectButton
           connected={connected}

@@ -2,7 +2,7 @@
 
 import { useCallback, useRef, useState } from "react";
 import { connectVoiceSocket, gatewayWsUrl, type OrbState } from "./ws";
-import { Player, startMic } from "./audio";
+import { Player, audioLevel, startMic } from "./audio";
 
 export type SessionState = OrbState | "disconnected";
 
@@ -14,6 +14,13 @@ export function useVoiceSession() {
   const [interruptTick, setInterruptTick] = useState(0);
   const socketRef = useRef<WebSocket | null>(null);
   const playerRef = useRef<Player | null>(null);
+  const micAnalyserRef = useRef<AnalyserNode | null>(null);
+
+  // Louder of mic and playback, 0..1 — polled per animation frame by the orb, not React state.
+  const getLevel = useCallback(
+    () => Math.max(audioLevel(micAnalyserRef.current), audioLevel(playerRef.current?.analyser ?? null)),
+    [],
+  );
 
   const connect = useCallback(() => {
     setError(null);
@@ -24,9 +31,10 @@ export function useVoiceSession() {
     const socket = connectVoiceSocket(gatewayWsUrl(), {
       onOpen: async () => {
         try {
-          await startMic((pcm16) => {
+          const mic = await startMic((pcm16) => {
             if (socket.readyState === WebSocket.OPEN) socket.send(pcm16);
           });
+          micAnalyserRef.current = mic.analyser;
           setState("idle");
           setConnecting(false);
         } catch {
@@ -47,6 +55,7 @@ export function useVoiceSession() {
         setState("disconnected");
         setConnecting(false);
         socketRef.current = null;
+        micAnalyserRef.current = null;
       },
       onError: () => {
         setError("Connection lost.");
@@ -58,5 +67,5 @@ export function useVoiceSession() {
     socketRef.current = socket;
   }, []);
 
-  return { state, transcript, connecting, error, interruptTick, connect };
+  return { state, transcript, connecting, error, interruptTick, connect, getLevel };
 }

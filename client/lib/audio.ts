@@ -1,6 +1,6 @@
 export async function startMic(
   onFrame: (pcm16: ArrayBuffer) => void,
-): Promise<{ ctx: AudioContext; stream: MediaStream }> {
+): Promise<{ ctx: AudioContext; stream: MediaStream; analyser: AnalyserNode }> {
   const ctx = new AudioContext({ sampleRate: 16000 });
   await ctx.audioWorklet.addModule("/worklet/recorder-worklet.js");
   const stream = await navigator.mediaDevices.getUserMedia({
@@ -10,7 +10,20 @@ export async function startMic(
   const node = new AudioWorkletNode(ctx, "recorder-worklet");
   node.port.onmessage = (e: MessageEvent<ArrayBuffer>) => onFrame(e.data);
   source.connect(node);
-  return { ctx, stream };
+  const analyser = ctx.createAnalyser();
+  source.connect(analyser);
+  return { ctx, stream, analyser };
+}
+
+// RMS loudness of whatever is flowing through the analyser, mapped to roughly 0..1 for speech.
+const levelBuf = new Float32Array(2048);
+export function audioLevel(analyser: AnalyserNode | null): number {
+  if (!analyser) return 0;
+  const buf = levelBuf.subarray(0, analyser.fftSize);
+  analyser.getFloatTimeDomainData(buf);
+  let sum = 0;
+  for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
+  return Math.min(1, Math.sqrt(sum / buf.length) * 6);
 }
 
 // ponytail: fixed schedule-ahead queue, no jitter buffer/backpressure handling —
@@ -18,10 +31,13 @@ export async function startMic(
 export class Player {
   private ctx: AudioContext;
   private nextTime: number;
+  readonly analyser: AnalyserNode;
 
   constructor(sampleRate = 24000) {
     this.ctx = new AudioContext({ sampleRate });
     this.nextTime = 0;
+    this.analyser = this.ctx.createAnalyser();
+    this.analyser.connect(this.ctx.destination);
   }
 
   playChunk(arrayBuffer: ArrayBuffer): void {
@@ -34,7 +50,7 @@ export class Player {
 
     const src = this.ctx.createBufferSource();
     src.buffer = buf;
-    src.connect(this.ctx.destination);
+    src.connect(this.analyser);
 
     const startAt = Math.max(this.ctx.currentTime, this.nextTime);
     src.start(startAt);
