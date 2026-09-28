@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import type { OrbState } from "@/lib/ws";
+import { DEFAULT_VOICE, type Palette } from "@/lib/voices";
 
 type DisplayState = OrbState | "disconnected" | "connecting";
 
@@ -14,18 +15,29 @@ interface OrbConfig {
   pulse: number; // how much the sphere swells with audio level
 }
 
-// ChatGPT voice-mode orb in teal: a sphere with soft white clouds drifting through it, which
-// swells with the live audio level (mic while you talk, playback while it replies). All values
-// ease toward the active state's config every frame, so state changes blend instead of jumping.
-// "disconnected" is the deliberate neutral-gray "off" state.
-const STATE_CONFIG: Record<DisplayState, OrbConfig> = {
-  idle: { sky: [hex("#e0f7fa"), hex("#80cbc4"), hex("#4db6ac")], cloudAlpha: 0.6, flow: 0.06, pulse: 0.1 },
-  listening: { sky: [hex("#e0f7fa"), hex("#4db6ac"), hex("#00897b")], cloudAlpha: 0.7, flow: 0.09, pulse: 0.22 },
-  thinking: { sky: [hex("#b2dfdb"), hex("#26a69a"), hex("#00695c")], cloudAlpha: 0.55, flow: 0.2, pulse: 0.05 },
-  speaking: { sky: [hex("#e0f7fa"), hex("#26a69a"), hex("#00897b")], cloudAlpha: 0.75, flow: 0.11, pulse: 0.22 },
-  connecting: { sky: [hex("#e0f7fa"), hex("#4db6ac"), hex("#00897b")], cloudAlpha: 0.5, flow: 0.14, pulse: 0 },
-  disconnected: { sky: [hex("#f5f5f5"), hex("#d8d8d8"), hex("#a8a8a8")], cloudAlpha: 0.45, flow: 0.02, pulse: 0 },
-};
+// ChatGPT voice-mode orb: a sphere with soft white clouds drifting through it, which swells with
+// the live audio level (mic while you talk, playback while it replies). Colors come from the
+// selected voice's palette; every state derives from its four tones. All values ease toward the
+// target config every frame, so state, voice and theme changes blend instead of jumping.
+// "disconnected" is the deliberate neutral-gray "off" state (darker grays on a dark background).
+function configFor(state: DisplayState, [light, mid, deep, darkest]: RGB[], dark: boolean): OrbConfig {
+  switch (state) {
+    case "idle":
+      return { sky: [light, mix(mid, light, 0.3), mid], cloudAlpha: 0.6, flow: 0.06, pulse: 0.1 };
+    case "listening":
+      return { sky: [light, mid, deep], cloudAlpha: 0.7, flow: 0.09, pulse: 0.22 };
+    case "thinking":
+      return { sky: [mix(light, mid, 0.4), deep, darkest], cloudAlpha: 0.55, flow: 0.2, pulse: 0.05 };
+    case "speaking":
+      return { sky: [light, mix(mid, light, 0.15), deep], cloudAlpha: 0.75, flow: 0.11, pulse: 0.22 };
+    case "connecting":
+      return { sky: [light, mid, deep], cloudAlpha: 0.5, flow: 0.14, pulse: 0 };
+    case "disconnected":
+      return dark
+        ? { sky: [hex("#636366"), hex("#48484a"), hex("#2c2c2e")], cloudAlpha: 0.25, flow: 0.02, pulse: 0 }
+        : { sky: [hex("#f5f5f5"), hex("#d8d8d8"), hex("#a8a8a8")], cloudAlpha: 0.45, flow: 0.02, pulse: 0 };
+  }
+}
 
 // Fixed cloud puffs: x phase (wraps horizontally), y offset, size, wobble phase — all in sphere radii.
 const PUFFS = [
@@ -48,9 +60,11 @@ export function Orb({
   getLevel,
   getMicLevel,
   size = 240,
+  palette = DEFAULT_VOICE.palette,
 }: {
   state: DisplayState;
   size?: number;
+  palette?: Palette;
   interruptTick?: number;
   getLevel?: () => number;
   getMicLevel?: () => number;
@@ -58,6 +72,8 @@ export function Orb({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const stateRef = useRef<DisplayState>(state);
   stateRef.current = state;
+  const paletteRef = useRef<RGB[]>([]);
+  paletteRef.current = palette.map(hex);
   const levelFnRef = useRef(getLevel);
   levelFnRef.current = getLevel;
   const micLevelFnRef = useRef(getMicLevel);
@@ -90,7 +106,8 @@ export function Orb({
     let last = performance.now();
     let raf = 0;
     // live config, eased toward the target state's config each frame
-    const cfg: OrbConfig = structuredClone(STATE_CONFIG[stateRef.current]);
+    const darkQuery = window.matchMedia("(prefers-color-scheme: dark)");
+    const cfg: OrbConfig = structuredClone(configFor(stateRef.current, paletteRef.current, darkQuery.matches));
 
     const tick = (now: number) => {
       const dt = Math.min(0.05, (now - last) / 1000); // real time, clamped after tab-switch stalls
@@ -98,7 +115,7 @@ export function Orb({
       const cx = size / 2;
       const cy = size / 2;
       const current = stateRef.current;
-      const goal = STATE_CONFIG[current];
+      const goal = configFor(current, paletteRef.current, darkQuery.matches);
       const ease = 1 - Math.exp(-dt * 3); // ~0.3s blend between states, frame-rate independent
       for (let i = 0; i < 3; i++) for (let c = 0; c < 3; c++) cfg.sky[i][c] += (goal.sky[i][c] - cfg.sky[i][c]) * ease;
       cfg.cloudAlpha += (goal.cloudAlpha - cfg.cloudAlpha) * ease;
@@ -184,7 +201,8 @@ export function Orb({
         const progress = 1 - flashRef.current;
         ctx.beginPath();
         ctx.arc(cx, cy, R * (1.1 + progress * 0.25), 0, Math.PI * 2);
-        ctx.strokeStyle = `rgba(29, 29, 31, ${0.4 * flashRef.current})`;
+        const ink = darkQuery.matches ? "245, 245, 247" : "29, 29, 31"; // contrast against either background
+        ctx.strokeStyle = `rgba(${ink}, ${0.4 * flashRef.current})`;
         ctx.lineWidth = 2;
         ctx.stroke();
         flashRef.current = reduceMotion ? 0 : Math.max(0, flashRef.current - dt * 2.5);
@@ -208,6 +226,10 @@ export function Orb({
 }
 
 const WHITE: RGB = [255, 255, 255];
+
+function mix(a: RGB, b: RGB, t: number): RGB {
+  return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+}
 
 function hex(h: string): RGB {
   return [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];

@@ -43,7 +43,22 @@ export function connectVoiceSocket(
   return socket;
 }
 
-export function gatewayWsUrl(): string {
+export function gatewayWsUrl(voice?: string): string {
+  const url = new URL(baseWsUrl());
+  if (voice) url.searchParams.set("voice", voice);
+  return url.toString();
+}
+
+// HTTP origin of the same gateway (voice previews), derived from the WS URL.
+export function gatewayHttpUrl(path: string): string {
+  const url = new URL(baseWsUrl());
+  url.protocol = url.protocol === "wss:" ? "https:" : "http:";
+  url.pathname = path;
+  url.search = "";
+  return url.toString();
+}
+
+function baseWsUrl(): string {
   const configured = process.env.NEXT_PUBLIC_GATEWAY_WS_URL;
   if (configured) return configured;
   const protocol =

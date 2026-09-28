@@ -62,14 +62,14 @@ export function useVoiceSession() {
   );
 
   const connect = useCallback(
-    ({ keepTurns = false }: { keepTurns?: boolean } = {}) => {
+    ({ voice, keepTurns = false }: { voice?: string; keepTurns?: boolean } = {}) => {
       setError(null);
       if (!keepTurns) setTurns([]);
       setConnecting(true);
       playerRef.current = new Player(24000);
       let opened = false;
 
-      const socket = connectVoiceSocket(gatewayWsUrl(), {
+      const socket = connectVoiceSocket(gatewayWsUrl(voice), {
         onOpen: async () => {
           opened = true;
           try {

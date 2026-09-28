@@ -6,8 +6,10 @@ import { Captions } from "@/components/Captions";
 import { CallControls, Icon } from "@/components/CallControls";
 import { ErrorNotice } from "@/components/ErrorNotice";
 import { HistoryDrawer } from "@/components/HistoryDrawer";
+import { VoicePicker } from "@/components/VoicePicker";
 import { feedbackEnabled, setFeedbackEnabled } from "@/lib/feedback";
 import { useVoiceSession } from "@/lib/useVoiceSession";
+import { DEFAULT_VOICE, loadVoice, saveVoice, type Voice } from "@/lib/voices";
 
 const PROMPTS = ["Plan my day", "Explain something simply", "Practice a conversation"];
 
@@ -37,12 +39,19 @@ export default function Home() {
   } = useVoiceSession();
   const [hint, setHint] = useState<string | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [voice, setVoice] = useState<Voice>(DEFAULT_VOICE);
+
+  // read after mount: localStorage isn't available during server render
+  useEffect(() => {
+    setVoice(loadVoice());
+  }, []);
   // a dropped call stays in the call view (grey orb + Reconnect) so captions and history survive
   const inCall = connecting || state !== "disconnected" || error === "dropped";
 
   const start = (prompt: string | null) => {
     setHint(prompt);
-    connect();
+    connect({ voice: voice.id });
   };
 
   const hangUp = () => {
@@ -50,14 +59,28 @@ export default function Home() {
     endCall();
   };
 
+  const pickVoice = (v: Voice) => {
+    setVoice(v);
+    saveVoice(v);
+  };
+
   if (!inCall) {
     return (
       <main className="min-h-dvh flex flex-col items-center justify-center gap-8 bg-bg px-4 font-sans motion-safe:animate-fade-in">
         <FeedbackToggle />
-        <Orb state="disconnected" size={200} />
-        <div className="text-center">
+        <Orb state={error ? "disconnected" : "idle"} size={200} palette={voice.palette} />
+        <div className="flex flex-col items-center text-center">
           <h1 className="text-[2.125rem] font-bold leading-tight text-ink">Talk to your assistant</h1>
           <p className="mt-2 text-ink-secondary">Just speak naturally — interrupt anytime.</p>
+          <button
+            onClick={() => setPickerOpen(true)}
+            className="mt-4 inline-flex items-center gap-1 rounded-full border border-divider bg-surface pl-4 pr-3 py-1.5 text-sm text-ink hover:border-primary transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+          >
+            Voice: <span className="font-semibold">{voice.name}</span>
+            <Icon>
+              <path d="M8 10l4 4 4-4" />
+            </Icon>
+          </button>
         </div>
         {error ? (
           <ErrorNotice kind={error} onAction={() => start(hint)} />
@@ -81,6 +104,7 @@ export default function Home() {
           ))}
         </div>
         <p className="text-ink-secondary text-xs">Uses your microphone — nothing is recorded or stored.</p>
+        <VoicePicker open={pickerOpen} onClose={() => setPickerOpen(false)} selected={voice} onSelect={pickVoice} />
       </main>
     );
   }
@@ -111,13 +135,14 @@ export default function Home() {
             interruptTick={interruptTick}
             getLevel={getLevel}
             getMicLevel={getMicLevel}
+            palette={voice.palette}
           />
         </button>
         <p aria-live="polite" className="text-ink-secondary text-[0.9375rem] font-semibold">
           {label}
         </p>
         <Captions turns={turns} state={state} hint={hint} />
-        {dropped && <ErrorNotice kind="dropped" onAction={() => connect({ keepTurns: true })} />}
+        {dropped && <ErrorNotice kind="dropped" onAction={() => connect({ voice: voice.id, keepTurns: true })} />}
       </div>
       <CallControls
         muted={muted}
