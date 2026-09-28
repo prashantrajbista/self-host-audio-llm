@@ -14,6 +14,7 @@ FRAME_MS = 20
 SILENCE_FRAMES_END_OF_TURN = 25  # ~500ms of trailing silence ends the utterance
 SPEECH_FRAMES_START_THRESHOLD = 5  # ~100ms of consecutive speech before committing — filters noise blips
 SENTENCE_ENDERS = (".", "!", "?")
+SYSTEM_PROMPT = "You are a voice assistant. Keep answers short — a sentence or two unless the user asks for more detail."
 
 _MD_LINK = re.compile(r"\[([^\]]*)\]\([^)]*\)")
 _MD_HEADING = re.compile(r"^#{1,6}\s*", re.MULTILINE)
@@ -119,7 +120,8 @@ class VoiceSession:
             await self._set_state("speaking")
             sentence_buf = ""
             reply = ""
-            async for token in self._llm.generate_stream([Message(role="user", content=transcript)]):
+            messages = [Message(role="system", content=SYSTEM_PROMPT), Message(role="user", content=transcript)]
+            async for token in self._llm.generate_stream(messages):
                 if self._interrupt.is_set():
                     break
                 await self._send_json({"type": "token", "data": token})
