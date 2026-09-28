@@ -11,6 +11,7 @@ export function useVoiceSession() {
   const [transcript, setTranscript] = useState("");
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [interruptTick, setInterruptTick] = useState(0);
   const socketRef = useRef<WebSocket | null>(null);
   const playerRef = useRef<Player | null>(null);
 
@@ -37,7 +38,10 @@ export function useVoiceSession() {
       onState: (s) => setState(s),
       onPartialTranscript: (text) => setTranscript(text),
       onToken: (text) => setTranscript((prev) => prev + text),
-      onInterrupt: () => playerRef.current?.stopAll(),
+      onInterrupt: () => {
+        playerRef.current?.stopAll();
+        setInterruptTick((t) => t + 1);
+      },
       onAudioChunk: (chunk) => playerRef.current?.playChunk(chunk),
       onClose: () => {
         setState("disconnected");
@@ -54,5 +58,5 @@ export function useVoiceSession() {
     socketRef.current = socket;
   }, []);
 
-  return { state, transcript, connecting, error, connect };
+  return { state, transcript, connecting, error, interruptTick, connect };
 }
