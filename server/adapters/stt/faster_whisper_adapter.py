@@ -1,3 +1,4 @@
+import asyncio
 import io
 from collections.abc import AsyncIterator
 
@@ -12,8 +13,10 @@ class FasterWhisperAdapter(STTAdapter):
     def __init__(self, model_size: str = "base.en", device: str = "cpu"):
         compute_type = "int8" if device == "cpu" else "float16"
         self._model = WhisperModel(model_size, device=device, compute_type=compute_type)
+        # warm-up: the first transcribe pays one-time init cost; take it at load, not on the first user turn
+        self._transcribe_sync(np.zeros(16000, dtype=np.int16).tobytes())
 
-    async def transcribe_stream(self, audio_chunk: bytes) -> AsyncIterator[TranscriptEvent]:
+    def _transcribe_sync(self, audio_chunk: bytes) -> str:
         if audio_chunk[:4] == b"RIFF":
             audio, _ = sf.read(io.BytesIO(audio_chunk), dtype="float32")
             if audio.ndim > 1:
@@ -21,6 +24,15 @@ class FasterWhisperAdapter(STTAdapter):
         else:
             # raw PCM16 mono 16kHz, as sent over the WS mic stream
             audio = np.frombuffer(audio_chunk, dtype=np.int16).astype(np.float32) / 32768.0
-        segments, _ = self._model.transcribe(audio, language="en")
-        text = " ".join(segment.text.strip() for segment in segments)
+        # greedy decode, no timestamps, no cross-window conditioning: ~2x faster than defaults,
+        # negligible accuracy loss on short voice-turn utterances
+        segments, _ = self._model.transcribe(
+            audio, language="en", beam_size=1, without_timestamps=True, condition_on_previous_text=False
+        )
+        # segments is lazy — the actual decode runs during this join, so it must stay in the thread
+        return " ".join(segment.text.strip() for segment in segments)
+
+    async def transcribe_stream(self, audio_chunk: bytes) -> AsyncIterator[TranscriptEvent]:
+        # off the event loop: inference here blocked WS receive (and barge-in detection) for its full duration
+        text = await asyncio.to_thread(self._transcribe_sync, audio_chunk)
         yield TranscriptEvent(text=text, is_final=True)

@@ -12,8 +12,12 @@ logger = logging.getLogger(__name__)
 
 FRAME_MS = 20
 SILENCE_FRAMES_END_OF_TURN = 25  # ~500ms of trailing silence ends the utterance
+# ~200ms of silence: start transcribing speculatively, so STT overlaps the rest of the end-of-turn
+# wait. Speech resuming cancels it; if silence holds, the turn reuses the result (the audio after
+# the snapshot is only silence, which wouldn't change the transcript).
+SILENCE_FRAMES_SPECULATIVE_STT = 10
 SPEECH_FRAMES_START_THRESHOLD = 5  # ~100ms of consecutive speech before committing — filters noise blips
-SENTENCE_ENDERS = (".", "!", "?")
+FIRST_CHUNK_MIN_WORDS = 3  # the first TTS chunk may end at a comma once it has this many words
 SYSTEM_PROMPT = "You are a voice assistant. Keep answers short — a sentence or two unless the user asks for more detail."
 
 _MD_LINK = re.compile(r"\[([^\]]*)\]\([^)]*\)")
@@ -21,6 +25,22 @@ _MD_HEADING = re.compile(r"^#{1,6}\s*", re.MULTILINE)
 _MD_LIST_BULLET = re.compile(r"^\s*[-*+]\s+", re.MULTILINE)
 _MD_EMPHASIS = re.compile(r"[*_`~]+")
 _WHITESPACE = re.compile(r"\s+")
+# sentence end = terminal punctuation followed by whitespace, so "3.5" or "e.g" mid-token doesn't split
+_SENTENCE_END = re.compile(r"[.!?]+[\"')\]]*\s")
+_CLAUSE_END = re.compile(r"[,;:]\s")
+
+
+def _split_speakable(buf: str, first: bool) -> tuple[str, str] | None:
+    """Return (chunk_to_speak, remainder) once buf holds a speakable unit, else None. The first
+    chunk of a reply may also end at a clause boundary, so audio starts before a full sentence."""
+    m = _SENTENCE_END.search(buf)
+    if m:
+        return buf[: m.end()], buf[m.end() :]
+    if first:
+        for m in _CLAUSE_END.finditer(buf):
+            if len(buf[: m.end()].split()) >= FIRST_CHUNK_MIN_WORDS:
+                return buf[: m.end()], buf[m.end() :]
+    return None
 
 
 def _strip_markdown(text: str) -> str:
@@ -63,6 +83,7 @@ class VoiceSession:
         self._pending_frames: list[bytes] = []
         self._interrupt = asyncio.Event()
         self._turn_task: asyncio.Task | None = None
+        self._stt_task: asyncio.Task | None = None  # speculative transcription of the current utterance
 
     async def handle_audio_frame(self, frame: bytes) -> None:
         is_speech = self._vad.is_speech(frame)
@@ -76,7 +97,9 @@ class VoiceSession:
             self._pending_frames.append(frame)
             if len(self._pending_frames) < SPEECH_FRAMES_START_THRESHOLD:
                 return
-            if self.state == "speaking":
+            # a turn is in flight (still transcribing/generating, or already speaking): new speech
+            # replaces it — otherwise a second turn would start alongside the first and both reply
+            if self.state in ("thinking", "speaking"):
                 await self._barge_in()
             else:
                 self._speech_started = True
@@ -89,8 +112,11 @@ class VoiceSession:
         self._audio_buffer.extend(frame)
         if is_speech:
             self._silence_frames = 0
+            self._cancel_speculative_stt()
         else:
             self._silence_frames += 1
+            if self._silence_frames == SILENCE_FRAMES_SPECULATIVE_STT:
+                self._stt_task = asyncio.create_task(self._transcribe(bytes(self._audio_buffer)))
             if self._silence_frames >= SILENCE_FRAMES_END_OF_TURN:
                 await self._end_of_utterance()
 
@@ -102,15 +128,29 @@ class VoiceSession:
         self._pending_frames.clear()
         self._interrupt.clear()
         logger.debug("end of utterance: %d bytes of audio", len(audio))
+        stt_task = self._stt_task or asyncio.create_task(self._transcribe(audio))
+        self._stt_task = None
         await self._set_state("thinking")
-        self._turn_task = asyncio.create_task(self._process_turn(audio))
+        self._turn_task = asyncio.create_task(self._process_turn(stt_task))
 
-    async def _process_turn(self, audio: bytes) -> None:
+    async def _transcribe(self, audio: bytes) -> str:
+        transcript = ""
+        async for event in self._stt.transcribe_stream(audio):
+            if event.is_final:
+                transcript = event.text
+        return transcript
+
+    def _cancel_speculative_stt(self) -> None:
+        if self._stt_task:
+            # retrieve any exception so a failed-then-discarded task doesn't log "never retrieved"
+            self._stt_task.add_done_callback(lambda t: t.cancelled() or t.exception())
+            self._stt_task.cancel()
+            self._stt_task = None
+
+    async def _process_turn(self, stt_task: asyncio.Task) -> None:
+        speaker: asyncio.Task | None = None
         try:
-            transcript = ""
-            async for event in self._stt.transcribe_stream(audio):
-                if event.is_final:
-                    transcript = event.text
+            transcript = await stt_task
             logger.info("transcript: %r", transcript)
             if not transcript.strip() or self._interrupt.is_set():
                 await self._set_state("idle")
@@ -118,20 +158,28 @@ class VoiceSession:
             await self._send_json({"type": "partial_transcript", "data": transcript})
 
             await self._set_state("speaking")
-            sentence_buf = ""
+            # LLM and TTS run concurrently: generation keeps streaming into the queue while earlier
+            # chunks are being synthesized, instead of stalling for each chunk's synthesis
+            queue: asyncio.Queue[str | None] = asyncio.Queue()
+            speaker = asyncio.create_task(self._speaker(queue))
+            buf = ""
             reply = ""
+            first = True
             messages = [Message(role="system", content=SYSTEM_PROMPT), Message(role="user", content=transcript)]
             async for token in self._llm.generate_stream(messages):
                 if self._interrupt.is_set():
                     break
                 await self._send_json({"type": "token", "data": token})
-                sentence_buf += token
+                buf += token
                 reply += token
-                if sentence_buf.rstrip().endswith(SENTENCE_ENDERS):
-                    await self._speak(sentence_buf)
-                    sentence_buf = ""
-            if sentence_buf.strip() and not self._interrupt.is_set():
-                await self._speak(sentence_buf)
+                while split := _split_speakable(buf, first):
+                    chunk, buf = split
+                    queue.put_nowait(chunk)
+                    first = False
+            if buf.strip() and not self._interrupt.is_set():
+                queue.put_nowait(buf)
+            queue.put_nowait(None)
+            await speaker
             logger.info("reply: %r", reply)
 
             if not self._interrupt.is_set():
@@ -141,6 +189,13 @@ class VoiceSession:
         except Exception:
             logger.exception("turn failed")
             await self._set_state("idle")
+        finally:
+            if speaker:
+                speaker.cancel()
+
+    async def _speaker(self, queue: "asyncio.Queue[str | None]") -> None:
+        while (text := await queue.get()) is not None:
+            await self._speak(text)
 
     async def _speak(self, text: str) -> None:
         text = _strip_markdown(text)
@@ -157,11 +212,18 @@ class VoiceSession:
         await self._llm.cancel()
         if self._turn_task:
             self._turn_task.cancel()
+        self._cancel_speculative_stt()
         await self._send_json({"type": "interrupt"})
         self._audio_buffer.clear()
         self._speech_started = True
         self._silence_frames = 0
         await self._set_state("listening")
+
+    def close(self) -> None:
+        """Connection gone: stop in-flight work so it doesn't keep running and sending to a dead socket."""
+        if self._turn_task:
+            self._turn_task.cancel()
+        self._cancel_speculative_stt()
 
     async def _set_state(self, state: str) -> None:
         logger.debug("state: %s -> %s", self.state, state)

@@ -42,7 +42,7 @@ cp .env.example .env
 uv run python -m tests.test_turn /path/to/sample.wav
 ```
 
-Runs one full turn (transcribe → generate reply → synthesize speech) through whichever backends `.env` selects, and asserts each stage produced output.
+Runs one full turn (transcribe → generate reply → synthesize speech) through `VoiceSession` with whichever backends `.env` selects, and asserts each stage produced output.
 
 ## Run the Phase 2 checks
 

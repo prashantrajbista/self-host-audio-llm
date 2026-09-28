@@ -1,25 +1,37 @@
-"""Phase 1 check: one full turn through STT -> LLM -> TTS. Run: python -m tests.test_turn <wav_path>"""
+"""Phase 1 check: one full turn through STT -> LLM -> TTS via VoiceSession, with the real backends
+.env selects (VAD bypassed — the whole WAV is one utterance). Run: python -m tests.test_turn <wav_path>
+"""
 
 import asyncio
 import sys
 
 from server.config import get_settings
 from server.gateway.factory import get_llm, get_stt, get_tts
-from server.gateway.orchestrator import Orchestrator
+from server.gateway.session import VoiceSession
 
 
 async def main(wav_path: str):
     settings = get_settings()
-    orchestrator = Orchestrator(
-        stt=get_stt(settings),
-        llm=get_llm(settings),
-        tts=get_tts(settings),
+    events = []
+    audio_out = bytearray()
+
+    async def send_json(msg):
+        events.append(msg)
+
+    async def send_bytes(chunk):
+        audio_out.extend(chunk)
+
+    session = VoiceSession(
+        stt=get_stt(settings), llm=get_llm(settings), tts=get_tts(settings), vad=None,
+        send_json=send_json, send_bytes=send_bytes,
     )
     with open(wav_path, "rb") as f:
         audio = f.read()
 
-    transcript, reply_text, audio_out = await orchestrator.run_turn(audio)
+    await session._process_turn(asyncio.create_task(session._transcribe(audio)))
 
+    transcript = "".join(e["data"] for e in events if e["type"] == "partial_transcript")
+    reply_text = "".join(e["data"] for e in events if e["type"] == "token")
     assert transcript, "STT produced no transcript"
     assert reply_text, "LLM produced no reply"
     assert audio_out, "TTS produced no audio"

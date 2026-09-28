@@ -7,7 +7,7 @@ import asyncio
 from server.adapters.llm.base import LLMAdapter
 from server.adapters.stt.base import STTAdapter, TranscriptEvent
 from server.adapters.tts.base import TTSAdapter
-from server.gateway.session import VoiceSession
+from server.gateway.session import VoiceSession, _split_speakable
 
 SPEECH_FRAME = b"\x01" + b"\x00" * 639
 SILENCE_FRAME = b"\x00" * 640
@@ -101,6 +101,30 @@ async def main():
     assert session2.state == "idle", session2.state
     assert not events, f"noise blip should not emit any events, got {events}"
     print("noise-blip rejection PASS")
+
+    # --- barge-in while still thinking: must cancel the in-flight turn, not start a second one ---
+    events.clear()
+    session3 = VoiceSession(
+        stt=FakeSTT(), llm=FakeLLM(), tts=FakeTTS(), vad=FakeVAD(),
+        send_json=send_json, send_bytes=send_bytes,
+    )
+    session3.state = "thinking"
+    session3._turn_task = asyncio.create_task(asyncio.sleep(10))
+    for _ in range(8):
+        await session3.handle_audio_frame(SPEECH_FRAME)
+    await asyncio.sleep(0)
+    assert session3._turn_task.cancelled()
+    assert session3.state == "listening", session3.state
+    print("barge-in during thinking PASS")
+
+    # --- TTS chunking: split on sentence end + whitespace, first chunk may end at a clause ---
+    assert _split_speakable("costs 3.5 dollars", False) is None
+    assert _split_speakable("Hi there. How", False) == ("Hi there. ", "How")
+    assert _split_speakable("Hi there!", False) is None  # no trailing space yet: wait for next token
+    assert _split_speakable("Well, sure", True) is None  # too few words before the comma
+    assert _split_speakable("Yes I can, sure", True) == ("Yes I can, ", "sure")
+    assert _split_speakable("Yes I can, sure", False) is None  # clause split is first-chunk only
+    print("chunk splitting PASS")
 
 
 if __name__ == "__main__":
