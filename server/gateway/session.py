@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import re
 from collections.abc import Awaitable, Callable
 
 from server.adapters.llm.base import LLMAdapter, Message
@@ -13,6 +14,22 @@ FRAME_MS = 20
 SILENCE_FRAMES_END_OF_TURN = 25  # ~500ms of trailing silence ends the utterance
 SPEECH_FRAMES_START_THRESHOLD = 5  # ~100ms of consecutive speech before committing — filters noise blips
 SENTENCE_ENDERS = (".", "!", "?")
+
+_MD_LINK = re.compile(r"\[([^\]]*)\]\([^)]*\)")
+_MD_HEADING = re.compile(r"^#{1,6}\s*", re.MULTILINE)
+_MD_LIST_BULLET = re.compile(r"^\s*[-*+]\s+", re.MULTILINE)
+_MD_EMPHASIS = re.compile(r"[*_`~]+")
+
+
+def _strip_markdown(text: str) -> str:
+    """Drop markdown syntax the LLM emits (#, **, _, `, - bullets, [links](url)) before it
+    reaches TTS — spoken aloud literally, it reads as noise rather than the formatting it's
+    meant to convey. The client still gets the raw token stream for on-screen rendering."""
+    text = _MD_LINK.sub(r"\1", text)
+    text = _MD_HEADING.sub("", text)
+    text = _MD_LIST_BULLET.sub("", text)
+    text = _MD_EMPHASIS.sub("", text)
+    return text
 
 
 class VoiceSession:
@@ -120,6 +137,9 @@ class VoiceSession:
             await self._set_state("idle")
 
     async def _speak(self, text: str) -> None:
+        text = _strip_markdown(text)
+        if not text.strip():
+            return
         async for chunk in self._tts.synthesize_stream(text):
             if self._interrupt.is_set():
                 break
