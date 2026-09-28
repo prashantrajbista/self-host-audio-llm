@@ -1,6 +1,17 @@
 # Rented GPU box only. Usage:
 #   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build
-# Swaps LLM leg from Ollama (CPU) to vLLM (GPU) — everything else (stt/tts/frontend) unchanged.
+# Swaps LLM leg from Ollama (CPU) to vLLM (GPU), and moves STT/TTS/VAD (gateway) onto the
+# same GPU too — one T4-class card has headroom for whisper-base + kokoro + silero alongside
+# vLLM's small model.
+x-gpu: &gpu
+  deploy:
+    resources:
+      reservations:
+        devices:
+          - driver: nvidia
+            count: 1
+            capabilities: [gpu]
+
 services:
   llm:
     image: vllm/vllm-openai:latest
@@ -9,19 +20,25 @@ services:
       - "8010:8000"
     volumes: !override
       - hf_cache:/root/.cache/huggingface
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
+    <<: *gpu
 
   gateway:
     environment:
       LLM_BACKEND: vllm
       LLM_ENDPOINT: http://llm:8000
       LLM_MODEL: ${VLLM_MODEL:-Qwen/Qwen2.5-1.5B-Instruct}
+      DEVICE: cuda
+    <<: *gpu
+
+  stt:
+    environment:
+      DEVICE: cuda
+    <<: *gpu
+
+  tts:
+    environment:
+      DEVICE: cuda
+    <<: *gpu
 
 volumes:
   hf_cache:
