@@ -1,6 +1,9 @@
 import asyncio
 import logging
 import re
+import time
+import wave
+from pathlib import Path
 from collections.abc import Awaitable, Callable
 
 from server.adapters.llm.base import LLMAdapter, Message
@@ -143,6 +146,13 @@ class VoiceSession:
         self._pending_frames.clear()
         self._interrupt.clear()
         logger.debug("end of utterance: %d bytes of audio", len(audio))
+        # TEMP debug: save what STT receives so recording quality can be listened to (audios/ is gitignored)
+        Path("audios").mkdir(exist_ok=True)
+        with wave.open(f"audios/utt_{time.strftime('%H%M%S')}_{time.time_ns() % 1000}.wav", "wb") as w:
+            w.setnchannels(1)
+            w.setsampwidth(2)
+            w.setframerate(16000)
+            w.writeframes(audio)
         stt_task = self._stt_task or asyncio.create_task(self._transcribe(audio))
         self._stt_task = None
         await self._set_state("thinking")
