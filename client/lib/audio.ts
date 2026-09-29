@@ -4,17 +4,14 @@ export async function startMic(
   const ctx = new AudioContext({ sampleRate: 16000 });
   await ctx.audioWorklet.addModule("/worklet/recorder-worklet.js");
   const stream = await navigator.mediaDevices.getUserMedia({
-    // NS off: it gates quiet speech, which Whisper then mishears. AGC lifts distant speech; AEC stays on
-    // so the assistant's own playback isn't picked up as the user.
-    audio: { channelCount: 1, noiseSuppression: false, autoGainControl: true, echoCancellation: true },
+    // NS on: background noise hurts Whisper more than the occasional gated quiet syllable. AGC lifts distant
+    // speech; AEC keeps the assistant's own playback from being picked up as the user.
+    audio: { channelCount: 1, noiseSuppression: true, autoGainControl: true, echoCancellation: true },
   });
   const source = ctx.createMediaStreamSource(stream);
   const node = new AudioWorkletNode(ctx, "recorder-worklet");
   node.port.onmessage = (e: MessageEvent<ArrayBuffer>) => onFrame(e.data);
-  // software boost for distant/quiet speech (browser AGC alone doesn't lift enough); worklet clamps peaks
-  const gain = ctx.createGain();
-  gain.gain.value = 2;
-  source.connect(gain).connect(node);
+  source.connect(node);
   const analyser = ctx.createAnalyser();
   source.connect(analyser);
   return { ctx, stream, analyser };
