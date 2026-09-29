@@ -38,7 +38,8 @@ class AgentDef:
     name: str
     instructions: str = ""
     tools: tuple[Tool, ...] = ()
-    llm_params: dict = field(default_factory=dict)  # extra request params, e.g. temperature, max_tokens
+    # extra request params, e.g. temperature; max_tokens caps a runaway reply (it's all spoken aloud)
+    llm_params: dict = field(default_factory=lambda: {"max_tokens": 400})
     voice: str | None = None
     max_steps: int = 4  # LLM calls per user turn (tool rounds + final answer)
 

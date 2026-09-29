@@ -1,5 +1,6 @@
 import asyncio
 import io
+import os
 from collections.abc import AsyncIterator
 
 import numpy as np
@@ -10,9 +11,15 @@ from server.adapters.stt.base import STTAdapter, TranscriptEvent
 
 
 class FasterWhisperAdapter(STTAdapter):
-    def __init__(self, model_size: str = "base.en", device: str = "cpu"):
+    def __init__(self, model_size: str = "base.en", device: str = "cpu", workers: int = 1, cpu_threads: int = 0):
         compute_type = "int8" if device == "cpu" else "float16"
-        self._model = WhisperModel(model_size, device=device, compute_type=compute_type)
+        # num_workers lets concurrent to_thread calls (one per call's utterance) decode in parallel instead
+        # of queueing on one model; on CPU split the cores between workers so they don't oversubscribe
+        workers = max(1, workers)
+        cpu_threads = cpu_threads or max(1, (os.cpu_count() or 1) // workers)
+        self._model = WhisperModel(
+            model_size, device=device, compute_type=compute_type, num_workers=workers, cpu_threads=cpu_threads
+        )
         # warm-up: the first transcribe pays one-time init cost; take it at load, not on the first user turn
         self._transcribe_sync(np.zeros(16000, dtype=np.int16).tobytes())
 

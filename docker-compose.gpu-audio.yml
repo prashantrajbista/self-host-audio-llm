@@ -19,6 +19,8 @@ services:
   stt:
     environment:
       DEVICE: cuda
+      # GPU has the headroom for a far more accurate model on noisy audio than CPU's small.en
+      WHISPER_MODEL: ${WHISPER_MODEL_GPU:-large-v3-turbo}
     <<: *gpu
 
   tts:

@@ -16,11 +16,16 @@ _llm_cache: dict[tuple, LLMAdapter] = {}
 def get_stt(settings: Settings) -> STTAdapter:
     if settings.stt_backend == "faster_whisper":
         device = settings.device if settings.device != "mps" else "cpu"
-        key = ("faster_whisper", settings.whisper_model, device)
+        key = ("faster_whisper", settings.whisper_model, device, settings.stt_workers, settings.stt_cpu_threads)
         if key not in _stt_cache:
             from server.adapters.stt.faster_whisper_adapter import FasterWhisperAdapter
 
-            _stt_cache[key] = FasterWhisperAdapter(model_size=settings.whisper_model, device=device)
+            _stt_cache[key] = FasterWhisperAdapter(
+                model_size=settings.whisper_model,
+                device=device,
+                workers=settings.stt_workers,
+                cpu_threads=settings.stt_cpu_threads,
+            )
         return _stt_cache[key]
     if settings.stt_backend == "remote":
         key = ("remote", settings.stt_endpoint)
@@ -63,12 +68,16 @@ def get_llm(settings: Settings) -> LLMAdapter:
 def get_tts(settings: Settings) -> TTSAdapter:
     if settings.tts_backend == "kokoro":
         voices = tuple(settings.tts_voices)
-        key = ("kokoro", settings.tts_voice, voices, settings.device, settings.tts_speed)
+        key = ("kokoro", settings.tts_voice, voices, settings.device, settings.tts_speed, settings.tts_workers)
         if key not in _tts_cache:
             from server.adapters.tts.kokoro_adapter import KokoroAdapter
 
             _tts_cache[key] = KokoroAdapter(
-                voice=settings.tts_voice, device=settings.device, voices=voices, speed=settings.tts_speed
+                voice=settings.tts_voice,
+                device=settings.device,
+                voices=voices,
+                speed=settings.tts_speed,
+                workers=settings.tts_workers,
             )
         return _tts_cache[key]
     if settings.tts_backend == "remote":

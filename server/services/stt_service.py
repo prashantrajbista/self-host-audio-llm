@@ -13,8 +13,15 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI()
 _device = settings.device if settings.device in ("cpu", "cuda") else "cpu"
-_adapter = FasterWhisperAdapter(model_size=settings.whisper_model, device=_device)
+_adapter = FasterWhisperAdapter(
+    model_size=settings.whisper_model, device=_device, workers=settings.stt_workers, cpu_threads=settings.stt_cpu_threads
+)
 logger.info("STT service ready: model=%s device=%s", settings.whisper_model, _device)
+
+
+@app.get("/health")
+async def health():
+    return {"ok": True}  # the model loads at import, before the app serves: reachable = ready
 
 
 @app.post("/transcribe")

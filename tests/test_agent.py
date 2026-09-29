@@ -10,7 +10,7 @@ from server.adapters.llm.fallback import FAILURE_THRESHOLD, FallbackLLM
 from server.agent import loop
 from server.agent.agents import AgentDef
 from server.agent.conversation import MAX_MESSAGES, Conversation
-from server.agent.loop import CONFIRM_REQUIRED, Filler, Speak, ToolFinished, ToolStarted, TurnTrace, run_turn
+from server.agent.loop import CONFIRM_REQUIRED, Filler, Prefetch, Speak, ToolFinished, ToolStarted, TurnTrace, run_turn
 from server.agent.tools import MAX_RESULT_CHARS, execute, tool
 
 
@@ -21,13 +21,20 @@ class ScriptedLLM(LLMAdapter):
         self.steps = list(steps)
         self.delay = delay
         self.requests = []
+        self.params = []
+        self.closed = 0  # streams closed before finishing (aborted requests)
 
     async def generate_stream(self, messages, tools=None, **params):
         self.requests.append((list(messages), tools))
-        for event in self.steps.pop(0):
-            await asyncio.sleep(self.delay)
-            yield event
-        yield Done("stop", None, "fake")
+        self.params.append(params)
+        try:
+            for event in self.steps.pop(0):
+                await asyncio.sleep(self.delay)
+                yield event
+            yield Done("stop", None, "fake")
+        except (asyncio.CancelledError, GeneratorExit):
+            self.closed += 1
+            raise
 
 
 def text(s):
@@ -80,9 +87,9 @@ async def book(day: str) -> str:
 AGENT = AgentDef(name="t", tools=(add, slow, wait, big, book))
 
 
-async def collect(conv, agent, llm):
+async def collect(conv, agent, llm, prefetch=None):
     trace = TurnTrace()
-    events = [e async for e in run_turn(conv, agent, llm, trace)]
+    events = [e async for e in run_turn(conv, agent, llm, trace, prefetch)]
     return events, trace
 
 
@@ -242,6 +249,38 @@ class FailingLLM(LLMAdapter):
         yield
 
 
+async def test_prefetch():
+    # preview is exactly what add_user leads to, notes and merged user turns included
+    conv = Conversation()
+    conv.add_user("first")  # unanswered: the next user message merges into it
+    conv.add_note("late result")
+    preview = conv.preview_messages("sys", "second")
+    conv.add_user("second")
+    assert preview == conv.request_messages("sys"), (preview, conv.request_messages("sys"))
+
+    # prefetched first step is replayed, not re-requested; tools still run only after commit
+    conv = Conversation()
+    llm = ScriptedLLM([text("Let me check.") + [ToolCall("c1", "add", '{"a": 2, "b": 2}')], text("Four.")])
+    p = Prefetch(llm, AGENT, conv.preview_messages(AGENT.system_prompt, "add"))
+    await asyncio.sleep(0.01)
+    assert len(llm.requests) == 1 and not conv.messages, "prefetch must not touch the conversation"
+    conv.add_user("add")
+    events, trace = await collect(conv, AGENT, llm, prefetch=p)
+    assert len(llm.requests) == 2, "first step must come from the prefetch"
+    assert trace.prefetched and spoken(events) == "Let me check.Four."
+    assert conv.messages[2].content == "4"
+    assert llm.params[0] == {"max_tokens": 400}, llm.params[0]
+
+    # cancelling an unused prefetch aborts its request
+    slow = ScriptedLLM([text("a b c d e f")], delay=0.05)
+    p = Prefetch(slow, AGENT, conv.preview_messages(AGENT.system_prompt, "x"))
+    await asyncio.sleep(0.02)
+    p.cancel()
+    await asyncio.sleep(0.01)
+    assert slow.closed == 1
+    print("speculative prefetch PASS")
+
+
 async def test_fallback():
     primary, secondary = FailingLLM("primary", hang=True), ScriptedLLM([text("ok")] * 10)
     llm = FallbackLLM([primary, secondary], first_event_timeout=0.05)
@@ -298,6 +337,7 @@ async def main():
     await test_confirmation()
     await test_barge_in_during_tools()
     test_interrupt_and_trim()
+    await test_prefetch()
     await test_fallback()
     await test_concurrency()
 

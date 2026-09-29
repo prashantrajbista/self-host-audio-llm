@@ -25,6 +25,12 @@ class Settings(BaseSettings):
     # voices a client may pick per session (Kokoro American-English pipeline, lang_code "a")
     tts_voices: list[str] = ["af_heart", "af_bella", "am_michael", "am_fenrir"]
 
+    # parallelism of the shared models: each worker is one more utterance/sentence in flight at once
+    stt_workers: int = 2  # faster-whisper num_workers
+    stt_cpu_threads: int = 0  # threads per STT worker on CPU; 0 = cores / workers
+    tts_workers: int = 2  # Kokoro pipelines in the pool (~330MB each)
+    max_sessions: int = 50  # concurrent calls per gateway process; extra calls are refused with close code 1013
+
     codec_enabled: bool = False
     device: str = "cpu"
     log_level: str = "INFO"

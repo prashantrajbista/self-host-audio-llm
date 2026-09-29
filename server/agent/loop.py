@@ -52,6 +52,41 @@ class TurnTrace:
     total_ms: float | None = None
     backend: str | None = None
     usage: list[dict] = field(default_factory=list)
+    prefetched: bool = False  # first LLM step was started on the speculative transcript
+
+
+def _schemas(agent: AgentDef, step: int) -> list[dict] | None:
+    # last step goes without tools, so the model has to answer from the results it already has
+    return agent.tool_schemas if step < agent.max_steps - 1 else None
+
+
+class Prefetch:
+    """The first LLM step, started on a speculative transcript before end of turn is confirmed.
+    Events are buffered, never spoken or acted on: tool calls only run once run_turn consumes them
+    after the turn commits. cancel() closes the stream, which aborts the HTTP request."""
+
+    def __init__(self, llm: LLMAdapter, agent: AgentDef, messages: list[Message]):
+        self.messages = messages
+        self._queue: asyncio.Queue = asyncio.Queue()
+        self._task = asyncio.create_task(self._pump(llm.generate_stream(messages, _schemas(agent, 0), **agent.llm_params)))
+
+    async def _pump(self, stream) -> None:
+        try:
+            async with aclosing(stream):
+                async for event in stream:
+                    self._queue.put_nowait(event)
+            self._queue.put_nowait(None)
+        except Exception as e:  # surfaced to the consumer, where the turn's error handling lives
+            self._queue.put_nowait(e)
+
+    async def events(self) -> AsyncIterator:
+        while (event := await self._queue.get()) is not None:
+            if isinstance(event, Exception):
+                raise event
+            yield event
+
+    def cancel(self) -> None:
+        self._task.cancel()
 
 
 def _canonical(arguments: str) -> str:
@@ -118,16 +153,32 @@ async def _run_tools(
         yield ToolFinished(c.name, ms, ok)
 
 
-async def run_turn(conv: Conversation, agent: AgentDef, llm: LLMAdapter, trace: TurnTrace) -> AsyncIterator[AgentEvent]:
+async def run_turn(
+    conv: Conversation, agent: AgentDef, llm: LLMAdapter, trace: TurnTrace, prefetch: Prefetch | None = None
+) -> AsyncIterator[AgentEvent]:
     """LLM -> tools -> LLM ... until a reply without tool calls. The user message is already in `conv`.
-    Text is yielded as it streams so TTS starts on the first clause, including a preamble before tools."""
+    Text is yielded as it streams so TTS starts on the first clause, including a preamble before tools.
+    With `prefetch`, the first step replays the request already started on the speculative transcript."""
+    try:
+        async for event in _run_steps(conv, agent, llm, trace, prefetch):
+            yield event
+    finally:
+        if prefetch:
+            prefetch.cancel()  # no-op once consumed; aborts the request if the turn ended early
+
+
+async def _run_steps(
+    conv: Conversation, agent: AgentDef, llm: LLMAdapter, trace: TurnTrace, prefetch: Prefetch | None
+) -> AsyncIterator[AgentEvent]:
     tools = {t.name: t for t in agent.tools}
     for step in range(agent.max_steps):
-        # last step goes without tools, so the model has to answer from the results it already has
-        schemas = agent.tool_schemas if step < agent.max_steps - 1 else None
         text, calls = "", []
-        start = time.monotonic()
-        stream = llm.generate_stream(conv.request_messages(agent.system_prompt), schemas, **agent.llm_params)
+        start = time.monotonic()  # for a prefetched step, TTFT is what's left to wait after commit
+        if step == 0 and prefetch:
+            trace.prefetched = True
+            stream = prefetch.events()
+        else:
+            stream = llm.generate_stream(conv.request_messages(agent.system_prompt), _schemas(agent, step), **agent.llm_params)
         async with aclosing(stream):
             async for event in stream:
                 if isinstance(event, Done):

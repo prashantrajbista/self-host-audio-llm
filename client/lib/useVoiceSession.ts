@@ -6,8 +6,11 @@ import { Player, audioLevel, startMic } from "./audio";
 import { feedback } from "./feedback";
 
 export type SessionState = OrbState | "disconnected";
-// mic/no-mic: couldn't get the microphone; unreachable: socket never opened; dropped: lost mid-call
-export type ErrorKind = "mic" | "no-mic" | "unreachable" | "dropped";
+// mic/no-mic: couldn't get the microphone; unreachable: socket never opened; dropped: lost mid-call;
+// busy: the gateway is at its session cap and refused the call
+export type ErrorKind = "mic" | "no-mic" | "unreachable" | "dropped" | "busy";
+
+const BUSY_CLOSE_CODE = 1013; // server/gateway/ws_handler.py
 
 export interface Turn {
   role: "user" | "assistant";
@@ -129,11 +132,11 @@ export function useVoiceSession() {
           }
           playerRef.current?.playChunk(chunk);
         },
-        onClose: () => {
+        onClose: (code) => {
           // only an unexpected close lands here: hang-ups and failures null socketRef first, and a
           // stale socket closing after a new call started must not tear that call down
           if (socketRef.current !== socket) return;
-          closeSession(opened ? "dropped" : "unreachable");
+          closeSession(code === BUSY_CLOSE_CODE ? "busy" : opened ? "dropped" : "unreachable");
           feedback("error");
         },
         onError: () => {}, // always followed by onClose, which classifies the failure

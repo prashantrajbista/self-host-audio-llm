@@ -28,7 +28,7 @@ async def main(wav_path: str):
     with open(wav_path, "rb") as f:
         audio = f.read()
 
-    await session._process_turn(asyncio.create_task(session._transcribe(audio)))
+    await session._process_turn(asyncio.create_task(session._speculate(audio, prefetch=False)))
 
     transcript = "".join(e["data"] for e in events if e["type"] == "partial_transcript")
     reply_text = "".join(e["data"] for e in events if e["type"] == "token")

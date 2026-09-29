@@ -4,7 +4,7 @@ import logging
 from fastapi import WebSocket, WebSocketDisconnect
 
 from server.agent.agents import get_agent
-from server.config import get_settings, resolve_voice
+from server.config import Settings, get_settings, resolve_voice
 from server.gateway.factory import get_llm, get_stt, get_tts
 from server.gateway.session import VoiceSession
 from server.vad.vad import VAD
@@ -14,12 +14,30 @@ logger = logging.getLogger(__name__)
 FRAME_BYTES = 640  # 20ms of mono PCM16 @ 16kHz
 
 
+BUSY_CLOSE_CODE = 1013  # "try again later": the client shows "all lines busy" instead of a dropped call
+
+_active_sessions = 0
+
+
 async def websocket_endpoint(ws: WebSocket) -> None:
+    global _active_sessions
     await ws.accept()
     client = f"{ws.client.host}:{ws.client.port}" if ws.client else "unknown"
-    logger.info("client connected: %s", client)
-
     settings = get_settings()
+    # refuse rather than admit: past capacity every call degrades, not just the newest one
+    if _active_sessions >= settings.max_sessions:
+        logger.warning("at capacity (%d sessions), refusing %s", _active_sessions, client)
+        await ws.close(code=BUSY_CLOSE_CODE, reason="busy")
+        return
+    _active_sessions += 1
+    try:
+        await _run_session(ws, client, settings)
+    finally:
+        _active_sessions -= 1
+
+
+async def _run_session(ws: WebSocket, client: str, settings: Settings) -> None:
+    logger.info("client connected: %s", client)
     agent = get_agent(ws.query_params.get("agent"), settings.agent)
     # client's pick wins, then the agent's own voice, then the configured default
     voice = resolve_voice(settings, ws.query_params.get("voice") or agent.voice)

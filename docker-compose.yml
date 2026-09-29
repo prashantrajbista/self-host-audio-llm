@@ -1,3 +1,11 @@
+# readiness: each service's /health answers only once its models are loaded. The slim Python image has no
+# curl, so probe with urllib. start_period covers first-boot model downloads.
+x-health: &health
+  interval: 10s
+  timeout: 5s
+  retries: 3
+  start_period: 300s
+
 services:
   gateway:
     build:
@@ -22,9 +30,15 @@ services:
       TTS_ENDPOINT: http://tts:8002
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       VAD_THRESHOLD: ${VAD_THRESHOLD:-0.35}
+      MAX_SESSIONS: ${MAX_SESSIONS:-50}
+    healthcheck:
+      <<: *health
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
     depends_on:
-      - stt
-      - tts
+      stt:
+        condition: service_healthy
+      tts:
+        condition: service_healthy
 
   stt:
     build:
@@ -35,8 +49,12 @@ services:
       - "8001:8001"
     environment:
       WHISPER_MODEL: ${WHISPER_MODEL:-small.en}
+      STT_WORKERS: ${STT_WORKERS:-2}
       DEVICE: cpu
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    healthcheck:
+      <<: *health
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
 
   tts:
     build:
@@ -48,7 +66,11 @@ services:
     environment:
       TTS_VOICE: ${TTS_VOICE:-af_heart}
       TTS_SPEED: ${TTS_SPEED:-1.15}
+      TTS_WORKERS: ${TTS_WORKERS:-2}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    healthcheck:
+      <<: *health
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8002/health')"]
 
   # llm:
   #   image: ollama/ollama:latest
@@ -66,7 +88,8 @@ services:
     ports:
       - "80:3000"
     depends_on:
-      - gateway
+      gateway:
+        condition: service_healthy
 
 # volumes:
 #   ollama_data:

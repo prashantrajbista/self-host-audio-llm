@@ -15,7 +15,7 @@ export interface VoiceSocketHandlers {
   onServerError: (message: string) => void;
   onAudioChunk: (chunk: ArrayBuffer) => void;
   onOpen: () => void;
-  onClose: () => void;
+  onClose: (code: number) => void;
   onError: () => void;
 }
 
@@ -27,7 +27,7 @@ export function connectVoiceSocket(
   socket.binaryType = "arraybuffer";
 
   socket.onopen = () => handlers.onOpen();
-  socket.onclose = () => handlers.onClose();
+  socket.onclose = (event) => handlers.onClose(event.code);
   socket.onerror = () => handlers.onError();
 
   socket.onmessage = (event: MessageEvent) => {

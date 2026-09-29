@@ -27,10 +27,23 @@ class Conversation:
     def add_note(self, note: str) -> None:
         self._notes.append(note)
 
+    def _with_notes(self, text: str) -> str:
+        return "".join(f"[Note: {n}]\n" for n in self._notes) + text
+
+    def preview_messages(self, system_prompt: str, text: str) -> list[Message]:
+        """The request add_user(text) would lead to, without changing anything: lets the first LLM call
+        start on a speculative transcript. Trimming is left out, it only ever drops older context."""
+        messages = self.request_messages(system_prompt)
+        text = self._with_notes(text)
+        if messages[-1].role == "user":
+            messages[-1] = Message(role="user", content=f"{messages[-1].content}\n{text}")
+        else:
+            messages.append(Message(role="user", content=text))
+        return messages
+
     def add_user(self, text: str) -> None:
-        if self._notes:
-            text = "".join(f"[Note: {n}]\n" for n in self._notes) + text
-            self._notes.clear()
+        text = self._with_notes(text)
+        self._notes.clear()
         self.user_turns += 1
         last = self.messages[-1] if self.messages else None
         if last and last.role == "user":  # previous turn produced no reply: keep roles alternating

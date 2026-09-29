@@ -9,6 +9,7 @@ from server.config import get_settings
 from server.gateway.factory import get_stt, get_tts
 from server.gateway.ws_handler import websocket_endpoint
 from server.logging_config import setup_logging
+from server.vad import vad
 
 setup_logging(get_settings().log_level)
 
@@ -19,10 +20,16 @@ async def lifespan(_: FastAPI):
     settings = get_settings()
     get_stt(settings)
     get_tts(settings)
+    vad.preload()  # per-connection VADs copy this, so a connect never reads the model from disk
     yield
 
 
 app = FastAPI(lifespan=lifespan)
+
+
+@app.get("/health")
+async def health():
+    return {"ok": True}  # lifespan loads the models before serving: reachable = ready
 
 
 @app.websocket("/ws")

@@ -15,6 +15,7 @@ dependencies = [
     "silero-vad",
     "nvidia-cublas-cu12; sys_platform == 'linux'",
     "nvidia-cudnn-cu12; sys_platform == 'linux'",
+    "onnxruntime>=1.30.0",
 ]
 
 [tool.uv]

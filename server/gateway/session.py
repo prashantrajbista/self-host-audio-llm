@@ -11,7 +11,7 @@ from dataclasses import asdict
 from server.adapters.llm.base import LLMAdapter
 from server.agent.agents import AGENTS, AgentDef
 from server.agent.conversation import Conversation
-from server.agent.loop import Filler, Speak, ToolFinished, ToolStarted, TurnTrace, run_turn
+from server.agent.loop import Filler, Prefetch, Speak, ToolFinished, ToolStarted, TurnTrace, run_turn
 from server.adapters.stt.base import STTAdapter
 from server.adapters.tts.base import TTSAdapter
 from server.vad.vad import VAD
@@ -20,9 +20,10 @@ logger = logging.getLogger(__name__)
 
 FRAME_MS = 20
 SILENCE_FRAMES_END_OF_TURN = 25  # ~500ms of trailing silence ends the utterance
-# ~200ms of silence: start transcribing speculatively, so STT overlaps the rest of the end-of-turn
-# wait. Speech resuming cancels it; if silence holds, the turn reuses the result (the audio after
-# the snapshot is only silence, which wouldn't change the transcript).
+# ~200ms of silence: start transcribing speculatively, then start the first LLM request on that
+# transcript, so STT and the LLM's time to first token overlap the rest of the end-of-turn wait.
+# Speech resuming cancels both; if silence holds, the turn reuses them (the audio after the snapshot
+# is only silence, which wouldn't change the transcript).
 SILENCE_FRAMES_SPECULATIVE_STT = 10
 SPEECH_FRAMES_START_THRESHOLD = 3  # ~60ms of consecutive speech before committing — filters noise blips
 PREROLL_FRAMES = 15  # ~300ms kept from before speech was detected, so soft onsets ("h" in "hi") aren't clipped
@@ -75,6 +76,16 @@ def _strip_markdown(text: str) -> str:
     return text
 
 
+def _discard_speculation(task: asyncio.Task) -> None:
+    """Speech resumed: drop the speculative result. Retrieves any exception (no "never retrieved" log)
+    and cancels a prefetched LLM request that already started."""
+    if task.cancelled() or task.exception():
+        return
+    _, prefetch = task.result()
+    if prefetch:
+        prefetch.cancel()
+
+
 class VoiceSession:
     """Per-connection state machine: idle -> listening -> thinking -> speaking, with barge-in."""
 
@@ -108,7 +119,8 @@ class VoiceSession:
         self._preroll: deque[bytes] = deque(maxlen=PREROLL_FRAMES)
         self._interrupt = asyncio.Event()
         self._turn_task: asyncio.Task | None = None
-        self._stt_task: asyncio.Task | None = None  # speculative transcription of the current utterance
+        # speculative transcription (+ prefetched first LLM step) of the current utterance
+        self._stt_task: asyncio.Task | None = None
         # (text, playback end time) per chunk spoken this turn: on barge-in, what the user actually heard
         self._spoken: list[tuple[str, float]] = []
         self._turn_open = False  # this turn's user message is in the conversation
@@ -151,7 +163,7 @@ class VoiceSession:
         else:
             self._silence_frames += 1
             if self._silence_frames == SILENCE_FRAMES_SPECULATIVE_STT:
-                self._stt_task = asyncio.create_task(self._transcribe(bytes(self._audio_buffer)))
+                self._stt_task = asyncio.create_task(self._speculate(bytes(self._audio_buffer)))
             if self._silence_frames >= SILENCE_FRAMES_END_OF_TURN:
                 await self._end_of_utterance()
 
@@ -164,7 +176,7 @@ class VoiceSession:
         self._interrupt.clear()
         logger.debug("end of utterance: %d bytes of audio", len(audio))
         self._turn_start = time.monotonic()
-        stt_task = self._stt_task or asyncio.create_task(self._transcribe(audio))
+        stt_task = self._stt_task or asyncio.create_task(self._speculate(audio, prefetch=False))
         self._stt_task = None
         await self._set_state("thinking")
         self._turn_task = asyncio.create_task(self._process_turn(stt_task))
@@ -176,10 +188,16 @@ class VoiceSession:
                 transcript = event.text
         return transcript
 
+    async def _speculate(self, audio: bytes, prefetch: bool = True) -> tuple[str, Prefetch | None]:
+        transcript = await self._transcribe(audio)
+        if not prefetch or not _is_usable_transcript(transcript):
+            return transcript, None
+        messages = self._conversation.preview_messages(self._agent.system_prompt, transcript)
+        return transcript, Prefetch(self._llm, self._agent, messages)
+
     def _cancel_speculative_stt(self) -> None:
         if self._stt_task:
-            # retrieve any exception so a failed-then-discarded task doesn't log "never retrieved"
-            self._stt_task.add_done_callback(lambda t: t.cancelled() or t.exception())
+            self._stt_task.add_done_callback(_discard_speculation)
             self._stt_task.cancel()
             self._stt_task = None
 
@@ -191,14 +209,20 @@ class VoiceSession:
         trace = self._trace = TurnTrace()
         self._spoken = []
         self._turn_open = False
+        prefetch: Prefetch | None = None
         try:
-            transcript = await stt_task
+            transcript, prefetch = await stt_task
             trace.stt_ms = self._elapsed_ms()
             logger.info("transcript: %r", transcript)
             if not _is_usable_transcript(transcript) or self._interrupt.is_set():
                 await self._set_state("idle")
                 return
             await self._send_json({"type": "partial_transcript", "data": transcript})
+            # the conversation can change after the speculative request was built (a late tool note):
+            # only reuse it if it's exactly the request this turn would send now
+            if prefetch and prefetch.messages != self._conversation.preview_messages(self._agent.system_prompt, transcript):
+                prefetch.cancel()
+                prefetch = None
             self._conversation.add_user(transcript)
             self._turn_open = True
 
@@ -210,7 +234,7 @@ class VoiceSession:
             buf = ""
             reply = ""
             first = True
-            async with aclosing(run_turn(self._conversation, self._agent, self._llm, trace)) as events:
+            async with aclosing(run_turn(self._conversation, self._agent, self._llm, trace, prefetch)) as events:
                 async for event in events:
                     if self._interrupt.is_set():
                         break
@@ -262,6 +286,8 @@ class VoiceSession:
         finally:
             if speaker:
                 speaker.cancel()
+            if prefetch:
+                prefetch.cancel()  # unused (unusable transcript, cancelled before the loop): abort it
 
     async def _speaker(self, queue: "asyncio.Queue[tuple[str, bool] | None]") -> None:
         while (item := await queue.get()) is not None:

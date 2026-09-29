@@ -16,6 +16,11 @@ const COPY: Record<ErrorKind, { title: string; body: string; action: string }> =
     body: "Make sure the gateway is running, then retry.",
     action: "Retry",
   },
+  busy: {
+    title: "All lines are busy",
+    body: "Every line is taken right now. Try again in a minute.",
+    action: "Try again",
+  },
   dropped: {
     title: "Connection lost",
     body: "The call dropped. Your conversation is still here.",

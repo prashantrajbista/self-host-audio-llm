@@ -1,19 +1,37 @@
+import copy
+
 import numpy as np
 import torch
 from silero_vad import load_silero_vad
 
 CHUNK_SAMPLES = 512  # Silero's native inference window at 16kHz
 
+_shared = None
+
+
+def _shared_model():
+    """Load the ONNX model once per process. ONNX over the torch.jit build: Silero's ONNX wrapper pins
+    inference to one thread, where torch would fan every 32ms window out to all cores and have the
+    sessions' threads fight each other. Always CPU: the model is tiny and runs every 32ms, so a GPU
+    transfer per window costs more than the inference it would save."""
+    global _shared
+    if _shared is None:
+        _shared = load_silero_vad(onnx=True)
+    return _shared
+
+
+def preload() -> None:
+    _shared_model()
+
 
 class VAD:
     def __init__(self, sample_rate: int = 16000, threshold: float = 0.5):
-        # fresh model per instance (one per WS connection): the jit module carries recurrent
-        # state across calls, so sharing one instance across concurrent sessions would let
-        # their audio cross-contaminate each other's speech/silence decisions. Loading is
-        # local/cheap (~ms, no network), unlike the STT/TTS models factory.py caches.
-        # Always CPU: the model is tiny and runs every 32ms, so a GPU transfer per window costs
-        # more than the inference it would save.
-        self._model = load_silero_vad()
+        # per-session copy: shares the (thread-safe) ONNX session, but the recurrent state and context
+        # are this session's own, so concurrent sessions' audio can't cross-contaminate each other's
+        # speech/silence decisions. reset_states() rebinds them to fresh tensors on the copy.
+        # ponytail: inference still runs inline on the event loop (~0.1ms/window); batch windows across
+        # sessions in one ONNX call if profiling shows loop lag at high session counts
+        self._model = copy.copy(_shared_model())
         self._model.reset_states()
         self._sample_rate = sample_rate
         self._threshold = threshold

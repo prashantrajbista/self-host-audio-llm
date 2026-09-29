@@ -106,6 +106,9 @@ Optimization order to try, cheapest first: quantization (`--quantization awq`/`f
 | `STT_BACKEND` / `LLM_BACKEND` / `TTS_BACKEND` | which adapter implementation to load (`LLM_BACKEND`: `openai` / `ollama` / `vllm` — all served via one OpenAI-compatible adapter) |
 | `LLM_FIRST_TOKEN_TIMEOUT` | seconds to wait for the LLM's first event before retry / failover |
 | `LLM_FALLBACK_ENDPOINT` / `_MODEL` / `_API_KEY` | optional secondary LLM with circuit breaker (self-host ↔ API) |
+| `STT_WORKERS` / `STT_CPU_THREADS` | parallel Whisper decodes (concurrent calls) and CPU threads per decode |
+| `TTS_WORKERS` | Kokoro pipelines in the pool, one sentence each in parallel (~330MB each) |
+| `MAX_SESSIONS` | concurrent calls per gateway process; extra calls are refused (client shows "all lines busy") |
 | `AGENT` | default agent definition (`assistant` / `demo_tools`); per session via `?agent=` |
 | `LLM_ENDPOINT` | `https://api.openai.com` by default; Ollama (`:11434`) or vLLM endpoint if self-hosting |
 | `OPENAI_API_KEY` | required for `LLM_BACKEND=openai` |

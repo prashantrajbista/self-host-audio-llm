@@ -6,3 +6,7 @@ docs/
 .claude/
 .env.local
 .env
+landing/
+.impeccable/
+.pytest_cache/
+*.csv

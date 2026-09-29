@@ -14,13 +14,26 @@ setup_logging(settings.log_level)
 logger = logging.getLogger(__name__)
 
 app = FastAPI()
-_adapter = KokoroAdapter(voice=settings.tts_voice, voices=tuple(settings.tts_voices), speed=settings.tts_speed)
-logger.info("TTS service ready: voice=%s", settings.tts_voice)
+# DEVICE was previously ignored here, so the GPU compose override still synthesized on CPU
+_device = settings.device if settings.device in ("cpu", "cuda") else "cpu"
+_adapter = KokoroAdapter(
+    voice=settings.tts_voice,
+    device=_device,
+    voices=tuple(settings.tts_voices),
+    speed=settings.tts_speed,
+    workers=settings.tts_workers,
+)
+logger.info("TTS service ready: voice=%s device=%s workers=%d", settings.tts_voice, _device, settings.tts_workers)
 
 
 class SynthesizeRequest(BaseModel):
     text: str
     voice: str | None = None
+
+
+@app.get("/health")
+async def health():
+    return {"ok": True}  # the model loads at import, before the app serves: reachable = ready
 
 
 @app.post("/synthesize")

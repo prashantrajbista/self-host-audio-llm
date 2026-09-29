@@ -25,13 +25,16 @@ class FakeSTT(STTAdapter):
 
 
 class FakeLLM(LLMAdapter):
-    def __init__(self):
+    def __init__(self, delay=0.01):
         self.closed = False  # generator closed mid-stream = HTTP request aborted
+        self.calls = 0
+        self.delay = delay
 
     async def generate_stream(self, messages, tools=None, **params):
+        self.calls += 1
         try:
             for word in ["Hi", " there", "."]:
-                await asyncio.sleep(0.01)
+                await asyncio.sleep(self.delay)
                 yield TextDelta(word)
             yield Done("stop", None, "fake")
         except BaseException:
@@ -142,6 +145,56 @@ async def main():
     assert _split_speakable("Yes I can, sure", True) == ("Yes I can, ", "sure")
     assert _split_speakable("Yes I can, sure", False) is None  # clause split is first-chunk only
     print("chunk splitting PASS")
+
+    # --- speculative LLM: started at ~200ms of silence and reused by the turn, not requested twice ---
+    events.clear()
+    llm5 = FakeLLM()
+    session5 = VoiceSession(stt=FakeSTT(), llm=llm5, tts=FakeTTS(), vad=FakeVAD(), send_json=send_json, send_bytes=send_bytes)
+    for _ in range(8):
+        await session5.handle_audio_frame(SPEECH_FRAME)
+    for _ in range(26):
+        await session5.handle_audio_frame(SILENCE_FRAME)
+        await asyncio.sleep(0)
+    await asyncio.sleep(0.2)
+    assert llm5.calls == 1, llm5.calls
+    trace = next(e["data"] for e in events if e["type"] == "trace")
+    assert trace["prefetched"], trace
+    print("speculative LLM reuse PASS")
+
+    # --- speech resumes after the speculative point: prefetched request is aborted ---
+    llm6 = FakeLLM(delay=0.2)
+    session6 = VoiceSession(stt=FakeSTT(), llm=llm6, tts=FakeTTS(), vad=FakeVAD(), send_json=send_json, send_bytes=send_bytes)
+    for _ in range(8):
+        await session6.handle_audio_frame(SPEECH_FRAME)
+    for _ in range(12):  # past the speculative point, short of end of turn
+        await session6.handle_audio_frame(SILENCE_FRAME)
+    await asyncio.sleep(0.05)  # prefetch request is in flight
+    assert llm6.calls == 1
+    await session6.handle_audio_frame(SPEECH_FRAME)
+    await asyncio.sleep(0.05)
+    assert llm6.closed, "resumed speech must abort the speculative request"
+    session6.close()
+    print("speculative LLM cancel PASS")
+
+    # --- session cap: past MAX_SESSIONS the call is refused with 1013, not admitted ---
+    from server.gateway import ws_handler
+
+    class FakeWS:
+        client = None
+        closed_with = None
+
+        async def accept(self):
+            pass
+
+        async def close(self, code=1000, reason=""):
+            self.closed_with = code
+
+    ws_handler._active_sessions = ws_handler.get_settings().max_sessions
+    ws = FakeWS()
+    await ws_handler.websocket_endpoint(ws)
+    assert ws.closed_with == ws_handler.BUSY_CLOSE_CODE, ws.closed_with
+    ws_handler._active_sessions = 0
+    print("session cap PASS")
 
     # --- voice selection: allowed voices pass through, anything else falls back to the default ---
     settings = Settings(tts_voice="af_heart", tts_voices=["af_heart", "am_michael"])
