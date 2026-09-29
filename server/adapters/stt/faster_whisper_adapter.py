@@ -24,6 +24,11 @@ class FasterWhisperAdapter(STTAdapter):
         else:
             # raw PCM16 mono 16kHz, as sent over the WS mic stream
             audio = np.frombuffer(audio_chunk, dtype=np.int16).astype(np.float32) / 32768.0
+        # quiet speech reaches Whisper at low level and gets misheard: boost to ~-3dBFS (never attenuate;
+        # gain capped and near-silence skipped so noise-only audio isn't blown up)
+        peak = float(np.abs(audio).max()) if audio.size else 0.0
+        if peak > 0.005:
+            audio = audio * min(10.0, max(1.0, 0.7 / peak))
         # greedy decode, no timestamps, no cross-window conditioning: ~2x faster than defaults,
         # negligible accuracy loss on short voice-turn utterances
         segments, _ = self._model.transcribe(

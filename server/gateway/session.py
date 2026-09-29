@@ -3,6 +3,7 @@ import logging
 import re
 import time
 import wave
+from collections import deque
 from pathlib import Path
 from collections.abc import Awaitable, Callable
 
@@ -19,7 +20,8 @@ SILENCE_FRAMES_END_OF_TURN = 25  # ~500ms of trailing silence ends the utterance
 # wait. Speech resuming cancels it; if silence holds, the turn reuses the result (the audio after
 # the snapshot is only silence, which wouldn't change the transcript).
 SILENCE_FRAMES_SPECULATIVE_STT = 10
-SPEECH_FRAMES_START_THRESHOLD = 5  # ~100ms of consecutive speech before committing — filters noise blips
+SPEECH_FRAMES_START_THRESHOLD = 3  # ~60ms of consecutive speech before committing — filters noise blips
+PREROLL_FRAMES = 15  # ~300ms kept from before speech was detected, so soft onsets ("h" in "hi") aren't clipped
 FIRST_CHUNK_MIN_WORDS = 3  # the first TTS chunk may end at a comma once it has this many words
 # Everything the model writes is spoken aloud by TTS, so ask for speakable text up front rather than
 # relying only on _strip_markdown after the fact (which remains as a safety net).
@@ -99,6 +101,7 @@ class VoiceSession:
         self._speech_started = False
         self._silence_frames = 0
         self._pending_frames: list[bytes] = []
+        self._preroll: deque[bytes] = deque(maxlen=PREROLL_FRAMES)
         self._interrupt = asyncio.Event()
         self._turn_task: asyncio.Task | None = None
         self._stt_task: asyncio.Task | None = None  # speculative transcription of the current utterance
@@ -107,6 +110,7 @@ class VoiceSession:
         is_speech = self._vad.is_speech(frame)
 
         if not self._speech_started:
+            self._preroll.append(frame)
             # debounce onset: require several consecutive speech frames before committing,
             # so a single noisy/misclassified frame doesn't start a turn or trigger barge-in
             if not is_speech:
@@ -122,7 +126,9 @@ class VoiceSession:
             else:
                 self._speech_started = True
                 await self._set_state("listening")
-            self._audio_buffer.extend(b"".join(self._pending_frames))
+            # preroll already holds the pending frames plus the audio just before them
+            self._audio_buffer.extend(b"".join(self._preroll))
+            self._preroll.clear()
             self._pending_frames.clear()
             self._silence_frames = 0
             return
