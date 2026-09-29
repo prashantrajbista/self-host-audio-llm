@@ -29,7 +29,7 @@ services:
     ports:
       - "8001:8001"
     environment:
-      WHISPER_MODEL: ${WHISPER_MODEL:-base.en}
+      WHISPER_MODEL: ${WHISPER_MODEL:-small.en}
       DEVICE: cpu
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
 

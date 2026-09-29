@@ -13,7 +13,7 @@ class Settings(BaseSettings):
 
     llm_model: str = "gpt-4o-mini"
     openai_api_key: str = ""
-    whisper_model: str = "base.en"
+    whisper_model: str = "small.en"
     tts_voice: str = "af_heart"  # default voice
     # voices a client may pick per session (Kokoro American-English pipeline, lang_code "a")
     tts_voices: list[str] = ["af_heart", "af_bella", "am_michael", "am_fenrir"]
