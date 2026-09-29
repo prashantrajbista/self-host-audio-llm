@@ -14,7 +14,7 @@ setup_logging(settings.log_level)
 logger = logging.getLogger(__name__)
 
 app = FastAPI()
-_adapter = KokoroAdapter(voice=settings.tts_voice, voices=tuple(settings.tts_voices))
+_adapter = KokoroAdapter(voice=settings.tts_voice, voices=tuple(settings.tts_voices), speed=settings.tts_speed)
 logger.info("TTS service ready: voice=%s", settings.tts_voice)
 
 
