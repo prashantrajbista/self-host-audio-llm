@@ -1,0 +1,163 @@
+id = "tech_behavioral"
+name = "Tech Behavioral & HR Screen"
+voice = "am_michael"
+persona = """
+You are Alex, a senior hiring manager at a well-known tech company. You are professional, warm but \
+direct, and you listen carefully. You push for specifics: what the candidate personally did, how, \
+and what the measurable result was.\
+"""
+opener = "Walk me through your background and what brings you to this role."
+
+[flow]
+num_questions = 5  # including the opener
+max_follow_ups = 2  # per question
+duration_min = 20
+
+# type: behavioral | hr. seniority: which levels the question suits.
+[[questions]]
+id = "conflict"
+text = "Tell me about a time you disagreed with a teammate or manager. How did you handle it?"
+competency = "collaboration"
+type = "behavioral"
+seniority = ["junior", "mid", "senior"]
+
+[[questions]]
+id = "failure"
+text = "Tell me about a project that failed or didn't go as planned. What happened and what did you learn?"
+competency = "ownership"
+type = "behavioral"
+seniority = ["junior", "mid", "senior"]
+
+[[questions]]
+id = "tight_deadline"
+text = "Describe a time you had to deliver under a tight deadline. How did you prioritize?"
+competency = "execution"
+type = "behavioral"
+seniority = ["junior", "mid", "senior"]
+
+[[questions]]
+id = "proud_project"
+text = "What's the project you're most proud of? Walk me through your part in it."
+competency = "impact"
+type = "behavioral"
+seniority = ["junior", "mid", "senior"]
+
+[[questions]]
+id = "ambiguity"
+text = "Tell me about a time you had to make progress on a problem with unclear requirements."
+competency = "ambiguity"
+type = "behavioral"
+seniority = ["mid", "senior"]
+
+[[questions]]
+id = "influence"
+text = "Tell me about a time you influenced a decision without having formal authority."
+competency = "leadership"
+type = "behavioral"
+seniority = ["mid", "senior"]
+
+[[questions]]
+id = "mentoring"
+text = "Tell me about someone you mentored or helped grow. What did you do and what changed for them?"
+competency = "leadership"
+type = "behavioral"
+seniority = ["senior"]
+
+[[questions]]
+id = "tradeoff"
+text = "Describe a hard technical or product trade-off you made. How did you decide?"
+competency = "judgment"
+type = "behavioral"
+seniority = ["mid", "senior"]
+
+[[questions]]
+id = "feedback"
+text = "Tell me about a time you received critical feedback. How did you respond?"
+competency = "growth"
+type = "behavioral"
+seniority = ["junior", "mid", "senior"]
+
+[[questions]]
+id = "learn_fast"
+text = "Tell me about a time you had to learn something new quickly to get a job done."
+competency = "growth"
+type = "behavioral"
+seniority = ["junior", "mid"]
+
+[[questions]]
+id = "why_company"
+text = "Why do you want to work here, and why now?"
+competency = "motivation"
+type = "hr"
+seniority = ["junior", "mid", "senior"]
+
+[[questions]]
+id = "why_leave"
+text = "Why are you looking to leave your current role?"
+competency = "motivation"
+type = "hr"
+seniority = ["junior", "mid", "senior"]
+
+[[questions]]
+id = "strength_weakness"
+text = "What's a real weakness of yours, and what are you doing about it?"
+competency = "self_awareness"
+type = "hr"
+seniority = ["junior", "mid", "senior"]
+
+[[questions]]
+id = "five_years"
+text = "Where do you see your career in the next few years?"
+competency = "motivation"
+type = "hr"
+seniority = ["junior", "mid", "senior"]
+
+[[questions]]
+id = "work_style"
+text = "What kind of team and manager do you do your best work with?"
+competency = "fit"
+type = "hr"
+seniority = ["junior", "mid", "senior"]
+
+# Scoring (milestone 2). Anchors describe a 1, 3 and 5 answer.
+[[rubric]]
+name = "structure"
+weight = 0.25
+description = "Clear situation, task, action, result flow; easy to follow."
+anchors = { 1 = "Rambling, no clear story.", 3 = "Mostly structured, result or context thin.", 5 = "Crisp STAR, every part present and proportionate." }
+
+[[rubric]]
+name = "specificity"
+weight = 0.25
+description = "Concrete details and the candidate's own actions (I, not we)."
+anchors = { 1 = "Generic or hypothetical.", 3 = "Some specifics, own role partly unclear.", 5 = "Specific actions clearly owned by the candidate." }
+
+[[rubric]]
+name = "impact"
+weight = 0.25
+description = "Outcomes, ideally measurable, and why they mattered."
+anchors = { 1 = "No outcome stated.", 3 = "Outcome stated, not quantified or tied to impact.", 5 = "Quantified result with clear business or team impact." }
+
+[[rubric]]
+name = "reflection"
+weight = 0.15
+description = "Lessons learned, self-awareness, what they'd do differently."
+anchors = { 1 = "None.", 3 = "Surface-level lesson.", 5 = "Genuine insight applied later." }
+
+[[rubric]]
+name = "relevance"
+weight = 0.10
+description = "Answers the question actually asked, at the right level for the role."
+anchors = { 1 = "Off-topic.", 3 = "Partly on-topic.", 5 = "Directly on point and level-appropriate." }
+
+# Overall 0-100 score thresholds, highest first.
+[verdicts]
+"Strong hire" = 85
+"Hire" = 70
+"Lean no" = 50
+"No hire" = 0
+
+[card]
+title = "{verdict} · {score}/100"
+subtitle = "{pack} · {seniority} {role}"
+tagline = "Practice your interview with a live AI interviewer."

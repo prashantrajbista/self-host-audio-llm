@@ -5,6 +5,7 @@ import numpy as np
 import soundfile as sf
 from fastapi import FastAPI, HTTPException, Response, WebSocket
 
+from server.agent.interview import load_packs
 from server.config import get_settings
 from server.gateway.factory import get_stt, get_tts
 from server.gateway.ws_handler import websocket_endpoint
@@ -21,6 +22,7 @@ async def lifespan(_: FastAPI):
     get_stt(settings)
     get_tts(settings)
     vad.preload()  # per-connection VADs copy this, so a connect never reads the model from disk
+    load_packs(settings.packs_dir)  # an invalid interview pack fails the boot, not a call
     yield
 
 

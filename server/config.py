@@ -19,6 +19,8 @@ class Settings(BaseSettings):
     llm_fallback_model: str = ""
     llm_fallback_api_key: str = ""
     agent: str = "assistant"  # default agent definition (server/agent/agents.py), per-session ?agent= overrides
+    packs_dir: str = "packs"  # interview packs (packs/*.toml); a session with ?pack= runs a mock interview
+    interviews_dir: str = "data/interviews"  # finished interview records (local JSON until Supabase)
     whisper_model: str = "small.en"
     tts_voice: str = "af_heart"  # default voice
     tts_speed: float = 1.15  # Kokoro speaking rate multiplier, 1.0 = normal

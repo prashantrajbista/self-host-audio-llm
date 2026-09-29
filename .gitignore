@@ -10,3 +10,4 @@ landing/
 .impeccable/
 .pytest_cache/
 *.csv
+data/

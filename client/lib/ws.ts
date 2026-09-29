@@ -5,7 +5,23 @@ type ServerMessage =
   | { type: "partial_transcript"; data: string }
   | { type: "token"; data: string }
   | { type: "interrupt"; data: null }
-  | { type: "error"; data: string };
+  | { type: "error"; data: string }
+  | { type: "question"; data: Question }
+  | { type: "interview_end"; data: { id: string; completed: boolean } };
+
+export interface Question {
+  index: number;
+  total: number;
+  text: string;
+}
+
+// Mock interview settings, sent as query params (server/gateway/ws_handler.py)
+export interface InterviewParams {
+  pack: string;
+  role?: string;
+  seniority?: string;
+  type?: string;
+}
 
 export interface VoiceSocketHandlers {
   onState: (state: OrbState) => void;
@@ -13,6 +29,8 @@ export interface VoiceSocketHandlers {
   onToken: (text: string) => void;
   onInterrupt: () => void;
   onServerError: (message: string) => void;
+  onQuestion: (question: Question) => void;
+  onInterviewEnd: (id: string) => void;
   onAudioChunk: (chunk: ArrayBuffer) => void;
   onOpen: () => void;
   onClose: (code: number) => void;
@@ -38,6 +56,8 @@ export function connectVoiceSocket(
       if (msg.type === "token") handlers.onToken(msg.data);
       if (msg.type === "interrupt") handlers.onInterrupt();
       if (msg.type === "error") handlers.onServerError(msg.data);
+      if (msg.type === "question") handlers.onQuestion(msg.data);
+      if (msg.type === "interview_end") handlers.onInterviewEnd(msg.data.id);
     } else {
       handlers.onAudioChunk(event.data as ArrayBuffer);
     }
@@ -46,9 +66,12 @@ export function connectVoiceSocket(
   return socket;
 }
 
-export function gatewayWsUrl(voice?: string): string {
+export function gatewayWsUrl(voice?: string, interview?: InterviewParams): string {
   const url = new URL(baseWsUrl());
   if (voice) url.searchParams.set("voice", voice);
+  for (const [key, value] of Object.entries(interview ?? {})) {
+    if (value) url.searchParams.set(key, value);
+  }
   return url.toString();
 }
 

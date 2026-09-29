@@ -76,6 +76,11 @@ def _strip_markdown(text: str) -> str:
     return text
 
 
+def _wall(monotonic: float) -> float:
+    """A time.monotonic() instant as epoch seconds (never in the past: playback end may have passed)."""
+    return time.time() + max(0.0, monotonic - time.monotonic())
+
+
 def _discard_speculation(task: asyncio.Task) -> None:
     """Speech resumed: drop the speculative result. Retrieves any exception (no "never retrieved" log)
     and cancels a prefetched LLM request that already started."""
@@ -126,6 +131,10 @@ class VoiceSession:
         self._turn_open = False  # this turn's user message is in the conversation
         self._turn_start = 0.0  # end of utterance, the zero point for the turn's latency trace
         self._trace = TurnTrace()
+        # timed transcript (epoch seconds), sent to the client as it happens and kept for scoring/replay
+        self.turns: list[dict] = []
+        self._utterance_start = 0.0
+        self._reply_start: float | None = None  # first reply audio sent this turn
 
     async def handle_audio_frame(self, frame: bytes) -> None:
         is_speech = self._vad.is_speech(frame)
@@ -149,6 +158,7 @@ class VoiceSession:
             else:
                 self._speech_started = True
                 await self._set_state("listening")
+            self._utterance_start = time.time() - len(self._preroll) * FRAME_MS / 1000
             # preroll already holds the pending frames plus the audio just before them
             self._audio_buffer.extend(b"".join(self._preroll))
             self._preroll.clear()
@@ -179,7 +189,35 @@ class VoiceSession:
         stt_task = self._stt_task or asyncio.create_task(self._speculate(audio, prefetch=False))
         self._stt_task = None
         await self._set_state("thinking")
-        self._turn_task = asyncio.create_task(self._process_turn(stt_task))
+        # end from the audio itself (PCM16 @ 16kHz, minus the trailing silence), not arrival time
+        speech_s = len(audio) / 32000 - SILENCE_FRAMES_END_OF_TURN * FRAME_MS / 1000
+        span = (self._utterance_start, self._utterance_start + max(0.0, speech_s))
+        self._turn_task = asyncio.create_task(self._process_turn(stt_task, span))
+
+    async def open(self, text: str) -> None:
+        """Agent speaks first: run a turn on `text` as a hidden user message (an instruction, never shown
+        or logged as something the user said)."""
+        opening = asyncio.get_running_loop().create_future()
+        opening.set_result((text, None))
+        self._interrupt.clear()
+        self._turn_start = time.monotonic()
+        await self._set_state("thinking")
+        self._turn_task = asyncio.create_task(self._process_turn(opening))
+
+    async def drain(self) -> None:
+        """Wait for the current turn to finish and its audio to finish playing on the client."""
+        if self._turn_task:
+            await asyncio.wait([self._turn_task])
+        await asyncio.sleep(max(0.0, self._playing_until - time.monotonic()) + 0.5)
+
+    async def _log_turn(self, role: str, text: str, start: float, end: float) -> None:
+        turn = {"role": role, "text": text, "start": round(start, 3), "end": round(end, 3)}
+        # a reply cut short after it was logged is the same reply (same start): replace, don't duplicate
+        if self.turns and self.turns[-1]["role"] == role and self.turns[-1]["start"] == turn["start"]:
+            self.turns[-1] = turn
+        else:
+            self.turns.append(turn)
+        await self._send_json({"type": "turn", "data": turn})
 
     async def _transcribe(self, audio: bytes) -> str:
         transcript = ""
@@ -204,10 +242,12 @@ class VoiceSession:
     def _elapsed_ms(self) -> float:
         return round((time.monotonic() - self._turn_start) * 1000)
 
-    async def _process_turn(self, stt_task: asyncio.Task) -> None:
+    async def _process_turn(self, stt_task: Awaitable, span: tuple[float, float] | None = None) -> None:
+        """`span` = when the user spoke (epoch seconds); None for a hidden opening turn."""
         speaker: asyncio.Task | None = None
         trace = self._trace = TurnTrace()
         self._spoken = []
+        self._reply_start = None
         self._turn_open = False
         prefetch: Prefetch | None = None
         try:
@@ -217,7 +257,9 @@ class VoiceSession:
             if not _is_usable_transcript(transcript) or self._interrupt.is_set():
                 await self._set_state("idle")
                 return
-            await self._send_json({"type": "partial_transcript", "data": transcript})
+            if span:
+                await self._send_json({"type": "partial_transcript", "data": transcript})
+                await self._log_turn("user", transcript, *span)
             # the conversation can change after the speculative request was built (a late tool note):
             # only reuse it if it's exactly the request this turn would send now
             if prefetch and prefetch.messages != self._conversation.preview_messages(self._agent.system_prompt, transcript):
@@ -264,6 +306,9 @@ class VoiceSession:
                 queue.put_nowait((buf, True))
             queue.put_nowait(None)
             await speaker
+            if self._spoken and self._reply_start is not None:
+                heard = "".join(t for t, _ in self._spoken).strip()
+                await self._log_turn("assistant", heard, self._reply_start, _wall(self._playing_until))
             logger.info("reply: %r", reply)
             trace.total_ms = self._elapsed_ms()
             logger.info("turn trace: %s", json.dumps(asdict(trace)))
@@ -306,6 +351,8 @@ class VoiceSession:
                 if self._interrupt.is_set():
                     return
                 await self._send_bytes(chunk)
+                if record and self._reply_start is None:
+                    self._reply_start = time.time()
                 if self._trace.first_audio_ms is None:
                     self._trace.first_audio_ms = self._elapsed_ms()
                 self._playing_until = max(time.monotonic(), self._playing_until) + len(chunk) / TTS_BYTES_PER_SEC
@@ -325,7 +372,10 @@ class VoiceSession:
             await asyncio.wait([task])  # let the agent loop record tool results before history is rewritten
         self._cancel_speculative_stt()
         if (running and self._turn_open) or any(end > now for _, end in self._spoken):
-            self._conversation.mark_interrupted("".join(t for t, end in self._spoken if end <= now))
+            heard = "".join(t for t, end in self._spoken if end <= now)
+            self._conversation.mark_interrupted(heard)
+            if heard.strip() and self._reply_start is not None:
+                await self._log_turn("assistant", heard.strip(), self._reply_start, time.time())
         self._spoken = []
         self._turn_open = False
 

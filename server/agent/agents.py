@@ -10,7 +10,7 @@ from server.agent.tools import Tool, tool
 # Everything the model writes is spoken aloud by TTS, so ask for speakable text up front rather than
 # relying only on the session's markdown stripping (which remains as a safety net).
 VOICE_PROMPT = (
-    "You are a friendly voice assistant in a live spoken conversation. Everything you write is read aloud "
+    "This is a live spoken conversation. Everything you write is read aloud "
     "by a text-to-speech engine, so write only what should be spoken.\n"
     "- Keep answers short: a sentence or two unless the user asks for more detail.\n"
     "- Talk like a person: plain conversational sentences, contractions, no filler.\n"
@@ -91,11 +91,13 @@ async def book_appointment(name: str, day: str, time: str) -> str:
     return f"Booked {name} on {day} at {time}. Reference number {random.randint(1000, 9999)}."
 
 
+ASSISTANT_PERSONA = "You are a friendly voice assistant."
+
 AGENTS: dict[str, AgentDef] = {
-    "assistant": AgentDef(name="assistant", tools=(get_time,)),
+    "assistant": AgentDef(name="assistant", instructions=ASSISTANT_PERSONA, tools=(get_time,)),
     "demo_tools": AgentDef(
         name="demo_tools",
-        instructions="You can tell the time, check the weather, and book appointments.",
+        instructions=f"{ASSISTANT_PERSONA} You can tell the time, check the weather, and book appointments.",
         tools=(get_time, lookup_weather, book_appointment),
     ),
 }

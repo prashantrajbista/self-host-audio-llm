@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
-import { connectVoiceSocket, gatewayWsUrl, type OrbState } from "./ws";
+import { connectVoiceSocket, gatewayWsUrl, type InterviewParams, type OrbState, type Question } from "./ws";
 import { Player, audioLevel, startMic } from "./audio";
 import { feedback } from "./feedback";
 
@@ -26,6 +26,8 @@ export function useVoiceSession() {
   const [error, setError] = useState<ErrorKind | null>(null);
   const [interruptTick, setInterruptTick] = useState(0);
   const [muted, setMuted] = useState(false);
+  const [question, setQuestion] = useState<Question | null>(null);
+  const [interviewId, setInterviewId] = useState<string | null>(null); // set when the interviewer ends the call
   // time from "thinking" to first reply audio, ms: last turn + running average for this call
   const [latency, setLatency] = useState<{ last: number; avg: number; count: number } | null>(null);
   const thinkingAtRef = useRef<number | null>(null);
@@ -68,16 +70,24 @@ export function useVoiceSession() {
   );
 
   const connect = useCallback(
-    ({ voice, keepTurns = false }: { voice?: string; keepTurns?: boolean } = {}) => {
+    ({
+      voice,
+      keepTurns = false,
+      interview,
+    }: { voice?: string; keepTurns?: boolean; interview?: InterviewParams } = {}) => {
       setError(null);
-      if (!keepTurns) setTurns([]);
+      setInterviewId(null);
+      if (!keepTurns) {
+        setTurns([]);
+        setQuestion(null);
+      }
       setLatency(null);
       thinkingAtRef.current = null;
       setConnecting(true);
       playerRef.current = new Player(24000);
       let opened = false;
 
-      const socket = connectVoiceSocket(gatewayWsUrl(voice), {
+      const socket = connectVoiceSocket(gatewayWsUrl(voice, interview), {
         onOpen: async () => {
           opened = true;
           try {
@@ -120,6 +130,13 @@ export function useVoiceSession() {
         onServerError: (message) => {
           feedback("error");
           setTurns((t) => [...t, { role: "assistant", text: message }]);
+        },
+        onQuestion: setQuestion,
+        // the server closes right after, once the goodbye has played: end cleanly, not as a drop
+        onInterviewEnd: (id) => {
+          feedback("end");
+          closeSession(null);
+          setInterviewId(id);
         },
         onAudioChunk: (chunk) => {
           if (thinkingAtRef.current !== null) {
@@ -179,6 +196,8 @@ export function useVoiceSession() {
     interruptTick,
     muted,
     latency,
+    question,
+    interviewId,
     connect,
     endCall,
     interrupt,

@@ -10,6 +10,7 @@ import { VoicePicker } from "@/components/VoicePicker";
 import { feedbackEnabled, setFeedbackEnabled } from "@/lib/feedback";
 import { useVoiceSession } from "@/lib/useVoiceSession";
 import { DEFAULT_VOICE, loadVoice, saveVoice, type Voice } from "@/lib/voices";
+import type { InterviewParams } from "@/lib/ws";
 
 const LATENCY_KEY = "show-latency";
 
@@ -33,6 +34,8 @@ export default function Home() {
     interruptTick,
     muted,
     latency,
+    question,
+    interviewId,
     connect,
     endCall,
     interrupt,
@@ -45,9 +48,21 @@ export default function Home() {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [voice, setVoice] = useState<Voice>(DEFAULT_VOICE);
   const [showLatency, setShowLatency] = useState(false);
+  // ?pack=tech_behavioral&role=...&seniority=junior|mid|senior&type=behavioral|hr|mixed runs a mock interview
+  const [interview, setInterview] = useState<InterviewParams | undefined>(undefined);
 
   // read after mount: localStorage isn't available during server render
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const pack = params.get("pack");
+    if (pack) {
+      setInterview({
+        pack,
+        role: params.get("role") ?? undefined,
+        seniority: params.get("seniority") ?? undefined,
+        type: params.get("type") ?? undefined,
+      });
+    }
     setVoice(loadVoice());
     try {
       setShowLatency(localStorage.getItem(LATENCY_KEY) === "on");
@@ -60,7 +75,7 @@ export default function Home() {
 
   const start = (prompt: string | null) => {
     setHint(prompt);
-    connect({ voice: voice.id });
+    connect({ voice: voice.id, interview });
   };
 
   const hangUp = () => {
@@ -120,8 +135,16 @@ export default function Home() {
         <FeedbackToggle />
         <Orb state={error ? "disconnected" : "idle"} size={200} palette={voice.palette} />
         <div className="flex flex-col items-center text-center">
-          <h1 className="text-[2.125rem] font-bold leading-tight text-ink">Talk to your assistant</h1>
-          <p className="mt-2 text-ink-secondary">Just speak naturally — interrupt anytime.</p>
+          <h1 className="text-[2.125rem] font-bold leading-tight text-ink">
+            {interview ? "Mock interview" : "Talk to your assistant"}
+          </h1>
+          <p className="mt-2 text-ink-secondary">
+            {interviewId
+              ? "Interview complete. Your feedback report is being prepared."
+              : interview
+                ? `${interview.seniority ?? "mid"} ${interview.role ?? "Software Engineer"} · the interviewer speaks first`
+                : "Just speak naturally — interrupt anytime."}
+          </p>
           <button
             onClick={() => setPickerOpen(true)}
             className="mt-4 inline-flex items-center gap-1 rounded-full border border-divider bg-surface pl-4 pr-3 py-1.5 text-sm text-ink hover:border-primary transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
@@ -139,11 +162,11 @@ export default function Home() {
             onClick={() => start(null)}
             className="rounded-full px-7 py-3 text-[0.9375rem] font-semibold bg-primary hover:bg-primary-hover text-white transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
           >
-            Start talking
+            {interview ? "Start interview" : "Start talking"}
           </button>
         )}
         <div className="flex flex-wrap justify-center gap-2 max-w-md">
-          {PROMPTS.map((prompt) => (
+          {(interview ? [] : PROMPTS).map((prompt) => (
             <button
               key={prompt}
               onClick={() => start(prompt)}
@@ -153,7 +176,11 @@ export default function Home() {
             </button>
           ))}
         </div>
-        <p className="text-ink-secondary text-xs">Uses your microphone — nothing is recorded or stored.</p>
+        <p className="text-ink-secondary text-xs">
+          {interview
+            ? "Uses your microphone — your answers are transcribed and saved for your feedback report."
+            : "Uses your microphone — nothing is recorded or stored."}
+        </p>
         <VoicePicker open={pickerOpen} onClose={() => setPickerOpen(false)} selected={voice} onSelect={pickVoice} />
       </main>
     );
@@ -181,6 +208,14 @@ export default function Home() {
         </p>
       )}
       <div className="flex-1 w-full flex flex-col items-center justify-center gap-6">
+        {question && (
+          <div className="max-w-md text-center">
+            <p className="text-xs font-semibold text-ink-secondary tabular-nums">
+              Question {question.index + 1} of {question.total}
+            </p>
+            <p className="mt-1 text-ink">{question.text}</p>
+          </div>
+        )}
         <button
           onClick={interrupt}
           disabled={!canInterrupt}
