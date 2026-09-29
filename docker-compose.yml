@@ -12,6 +12,11 @@ services:
       LLM_BACKEND: ${LLM_BACKEND:-openai}
       LLM_ENDPOINT: ${LLM_ENDPOINT:-https://api.openai.com}
       LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}
+      LLM_FIRST_TOKEN_TIMEOUT: ${LLM_FIRST_TOKEN_TIMEOUT:-15}
+      LLM_FALLBACK_ENDPOINT: ${LLM_FALLBACK_ENDPOINT:-}
+      LLM_FALLBACK_MODEL: ${LLM_FALLBACK_MODEL:-}
+      LLM_FALLBACK_API_KEY: ${LLM_FALLBACK_API_KEY:-}
+      AGENT: ${AGENT:-assistant}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       TTS_BACKEND: remote
       TTS_ENDPOINT: http://tts:8002

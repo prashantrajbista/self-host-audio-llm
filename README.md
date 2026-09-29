@@ -21,6 +21,7 @@ mic audio → STT adapter → LLM adapter → TTS adapter → speaker audio
 - [x] Phase 3 — Dockerize (per-service containers + compose)
 - [x] Phase 4 — GPU + vLLM swap (compose override written + validated; untested on real GPU hardware)
 - [x] Phase 5 — GPU profiling/optimization (tooling written; `latency_bench` verified against live server, `gpu_util_log`/`profile_llm_torch` need real GPU hardware to run)
+- [x] Agentic core — conversation memory, tool calling, agent loop, LLM fallback ([docs/agentic_module.md](docs/agentic_module.md))
 - [ ] Phase 6 — Encodec integration
 - [ ] Phase 7 — Eval framework (WER, latency, NISQA, throughput)
 
@@ -48,6 +49,7 @@ Runs one full turn (transcribe → generate reply → synthesize speech) through
 
 ```bash
 uv run python -m tests.test_session          # state machine + barge-in, fake adapters, no models
+uv run python -m tests.test_agent            # agent loop, tools, confirmation, fallback, concurrency — no models
 uv run python -m tests.test_ws_integration   # real STT/LLM/TTS over an actual WebSocket
 uv run uvicorn server.main:app --reload      # then open http://localhost:8000 in a browser
 ```
@@ -101,7 +103,10 @@ Optimization order to try, cheapest first: quantization (`--quantization awq`/`f
 
 | Var | Purpose |
 |---|---|
-| `STT_BACKEND` / `LLM_BACKEND` / `TTS_BACKEND` | which adapter implementation to load (`LLM_BACKEND`: `openai` / `ollama` / `vllm`) |
+| `STT_BACKEND` / `LLM_BACKEND` / `TTS_BACKEND` | which adapter implementation to load (`LLM_BACKEND`: `openai` / `ollama` / `vllm` — all served via one OpenAI-compatible adapter) |
+| `LLM_FIRST_TOKEN_TIMEOUT` | seconds to wait for the LLM's first event before retry / failover |
+| `LLM_FALLBACK_ENDPOINT` / `_MODEL` / `_API_KEY` | optional secondary LLM with circuit breaker (self-host ↔ API) |
+| `AGENT` | default agent definition (`assistant` / `demo_tools`); per session via `?agent=` |
 | `LLM_ENDPOINT` | `https://api.openai.com` by default; Ollama (`:11434`) or vLLM endpoint if self-hosting |
 | `OPENAI_API_KEY` | required for `LLM_BACKEND=openai` |
 | `LLM_MODEL`, `WHISPER_MODEL`, `TTS_VOICE` | model selection per stage |

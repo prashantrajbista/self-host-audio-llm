@@ -1,14 +1,17 @@
 import asyncio
-from contextlib import aclosing
+import json
 import logging
 import re
 import time
-import wave
 from collections import deque
-from pathlib import Path
 from collections.abc import Awaitable, Callable
+from contextlib import aclosing
+from dataclasses import asdict
 
-from server.adapters.llm.base import LLMAdapter, Message
+from server.adapters.llm.base import LLMAdapter
+from server.agent.agents import AGENTS, AgentDef
+from server.agent.conversation import Conversation
+from server.agent.loop import Filler, Speak, ToolFinished, ToolStarted, TurnTrace, run_turn
 from server.adapters.stt.base import STTAdapter
 from server.adapters.tts.base import TTSAdapter
 from server.vad.vad import VAD
@@ -23,31 +26,12 @@ SILENCE_FRAMES_END_OF_TURN = 25  # ~500ms of trailing silence ends the utterance
 SILENCE_FRAMES_SPECULATIVE_STT = 10
 SPEECH_FRAMES_START_THRESHOLD = 3  # ~60ms of consecutive speech before committing — filters noise blips
 PREROLL_FRAMES = 15  # ~300ms kept from before speech was detected, so soft onsets ("h" in "hi") aren't clipped
-LLM_FIRST_TOKEN_TIMEOUT = 15.0  # s; a hung request would otherwise leave the session stuck in "thinking"
-LLM_RETRIES = 1  # retried only before the first token, so a partial reply is never repeated
 TTS_BYTES_PER_SEC = 24000 * 2  # PCM16 @ 24kHz, what the client Player plays back
 TTS_MAX_LEAD_S = 3.0  # don't send audio more than this far ahead of playback: bounds client memory and barge-in cleanup
 FALLBACK_LINE = "Sorry, I had trouble with that. Could you say it again?"
 # Whisper's classic outputs on noise-only audio; "thank you" alone is left out because users do say it
 _STT_HALLUCINATIONS = {"you", "thanks for watching", "thank you for watching"}
 FIRST_CHUNK_MIN_WORDS = 3  # the first TTS chunk may end at a comma once it has this many words
-# Everything the model writes is spoken aloud by TTS, so ask for speakable text up front rather than
-# relying only on _strip_markdown after the fact (which remains as a safety net).
-SYSTEM_PROMPT = (
-    "You are a friendly voice assistant in a live spoken conversation. Everything you write is read aloud "
-    "by a text-to-speech engine, so write only what should be spoken.\n"
-    "- Keep answers short: a sentence or two unless the user asks for more detail.\n"
-    "- Talk like a person: plain conversational sentences, contractions, no filler.\n"
-    "- Never use markdown, bullet points, numbered lists, headings, tables, code blocks, emojis, or URLs. "
-    "If you need to list things, say them in a sentence, like \"first..., then..., and finally...\".\n"
-    "- Write numbers, dates, times, units, and symbols the way they're said: \"twenty-five degrees\", "
-    "\"three thirty pm\", \"about five percent\", \"forty dollars\".\n"
-    "- Spell out abbreviations that aren't normally said as letters, and avoid parentheses.\n"
-    "- The user's words come from speech-to-text and may contain mishearings. If a message seems oddly worded or "
-    "out of context, ask what they meant instead of guessing.\n"
-    "- If the request is unclear or you didn't catch it, briefly ask the user to repeat or clarify."
-)
-
 _MD_LINK = re.compile(r"\[([^\]]*)\]\([^)]*\)")
 _MD_HEADING = re.compile(r"^#{1,6}\s*", re.MULTILINE)
 _MD_LIST_BULLET = re.compile(r"^\s*[-*+]\s+", re.MULTILINE)
@@ -103,11 +87,14 @@ class VoiceSession:
         send_json: Callable[[dict], Awaitable[None]],
         send_bytes: Callable[[bytes], Awaitable[None]],
         voice: str | None = None,
+        agent: AgentDef | None = None,
     ):
         self._stt = stt
         self._llm = llm
         self._tts = tts
         self._voice = voice
+        self._agent = agent or AGENTS["assistant"]
+        self._conversation = Conversation()
         self._vad = vad
         self._send_json = send_json
         self._send_bytes = send_bytes
@@ -122,6 +109,11 @@ class VoiceSession:
         self._interrupt = asyncio.Event()
         self._turn_task: asyncio.Task | None = None
         self._stt_task: asyncio.Task | None = None  # speculative transcription of the current utterance
+        # (text, playback end time) per chunk spoken this turn: on barge-in, what the user actually heard
+        self._spoken: list[tuple[str, float]] = []
+        self._turn_open = False  # this turn's user message is in the conversation
+        self._turn_start = 0.0  # end of utterance, the zero point for the turn's latency trace
+        self._trace = TurnTrace()
 
     async def handle_audio_frame(self, frame: bytes) -> None:
         is_speech = self._vad.is_speech(frame)
@@ -171,13 +163,7 @@ class VoiceSession:
         self._pending_frames.clear()
         self._interrupt.clear()
         logger.debug("end of utterance: %d bytes of audio", len(audio))
-        # TEMP debug: save what STT receives so recording quality can be listened to (audios/ is gitignored)
-        Path("audios").mkdir(exist_ok=True)
-        with wave.open(f"audios/utt_{time.strftime('%H%M%S')}_{time.time_ns() % 1000}.wav", "wb") as w:
-            w.setnchannels(1)
-            w.setsampwidth(2)
-            w.setframerate(16000)
-            w.writeframes(audio)
+        self._turn_start = time.monotonic()
         stt_task = self._stt_task or asyncio.create_task(self._transcribe(audio))
         self._stt_task = None
         await self._set_state("thinking")
@@ -197,40 +183,67 @@ class VoiceSession:
             self._stt_task.cancel()
             self._stt_task = None
 
+    def _elapsed_ms(self) -> float:
+        return round((time.monotonic() - self._turn_start) * 1000)
+
     async def _process_turn(self, stt_task: asyncio.Task) -> None:
         speaker: asyncio.Task | None = None
+        trace = self._trace = TurnTrace()
+        self._spoken = []
+        self._turn_open = False
         try:
             transcript = await stt_task
+            trace.stt_ms = self._elapsed_ms()
             logger.info("transcript: %r", transcript)
             if not _is_usable_transcript(transcript) or self._interrupt.is_set():
                 await self._set_state("idle")
                 return
             await self._send_json({"type": "partial_transcript", "data": transcript})
+            self._conversation.add_user(transcript)
+            self._turn_open = True
 
             await self._set_state("speaking")
-            # LLM and TTS run concurrently: generation keeps streaming into the queue while earlier
+            # agent and TTS run concurrently: generation keeps streaming into the queue while earlier
             # chunks are being synthesized, instead of stalling for each chunk's synthesis
-            queue: asyncio.Queue[str | None] = asyncio.Queue()
+            queue: asyncio.Queue[tuple[str, bool] | None] = asyncio.Queue()
             speaker = asyncio.create_task(self._speaker(queue))
             buf = ""
             reply = ""
             first = True
-            messages = [Message(role="system", content=SYSTEM_PROMPT), Message(role="user", content=transcript)]
-            async for token in self._stream_llm(messages):
-                if self._interrupt.is_set():
-                    break
-                await self._send_json({"type": "token", "data": token})
-                buf += token
-                reply += token
-                while split := _split_speakable(buf, first):
-                    chunk, buf = split
-                    queue.put_nowait(chunk)
-                    first = False
+            async with aclosing(run_turn(self._conversation, self._agent, self._llm, trace)) as events:
+                async for event in events:
+                    if self._interrupt.is_set():
+                        break
+                    if isinstance(event, Speak):
+                        await self._send_json({"type": "token", "data": event.text})
+                        buf += event.text
+                        reply += event.text
+                        while split := _split_speakable(buf, first):
+                            chunk, buf = split
+                            queue.put_nowait((chunk, True))
+                            first = False
+                    elif isinstance(event, Filler):
+                        queue.put_nowait((event.text, False))  # not part of the reply: kept out of history
+                    else:
+                        # tool boundary: flush the preamble ("let me check") now; the answer after the
+                        # tool gets the fast first-chunk split again
+                        if buf.strip():
+                            queue.put_nowait((buf, True))
+                        buf = ""
+                        first = True
+                        status = "started" if isinstance(event, ToolStarted) else "finished"
+                        data = {"name": event.name, "status": status}
+                        if isinstance(event, ToolFinished):
+                            data |= {"ms": round(event.ms), "ok": event.ok}
+                        await self._send_json({"type": "tool", "data": data})
             if buf.strip() and not self._interrupt.is_set():
-                queue.put_nowait(buf)
+                queue.put_nowait((buf, True))
             queue.put_nowait(None)
             await speaker
             logger.info("reply: %r", reply)
+            trace.total_ms = self._elapsed_ms()
+            logger.info("turn trace: %s", json.dumps(asdict(trace)))
+            await self._send_json({"type": "trace", "data": asdict(trace)})
 
             if not self._interrupt.is_set():
                 await self._set_state("idle")
@@ -242,7 +255,7 @@ class VoiceSession:
                 speaker.cancel()
             await self._send_json({"type": "error", "data": FALLBACK_LINE})
             try:
-                await self._speak(FALLBACK_LINE)
+                await self._speak(FALLBACK_LINE, record=False)
             except Exception:
                 logger.exception("fallback speech failed")
             await self._set_state("idle")
@@ -250,30 +263,11 @@ class VoiceSession:
             if speaker:
                 speaker.cancel()
 
-    async def _stream_llm(self, messages: list[Message]):
-        """LLM tokens with a first-token timeout and retry; retrying is only safe before anything was yielded."""
-        for attempt in range(LLM_RETRIES + 1):
-            gen = self._llm.generate_stream(messages)
-            got_token = False
-            try:
-                while True:
-                    token = await asyncio.wait_for(anext(gen), None if got_token else LLM_FIRST_TOKEN_TIMEOUT)
-                    got_token = True
-                    yield token
-            except StopAsyncIteration:
-                return
-            except Exception:
-                if got_token or attempt == LLM_RETRIES:
-                    raise
-                logger.warning("llm failed before first token, retrying", exc_info=True)
-            finally:
-                await gen.aclose()
+    async def _speaker(self, queue: "asyncio.Queue[tuple[str, bool] | None]") -> None:
+        while (item := await queue.get()) is not None:
+            await self._speak(*item)
 
-    async def _speaker(self, queue: "asyncio.Queue[str | None]") -> None:
-        while (text := await queue.get()) is not None:
-            await self._speak(text)
-
-    async def _speak(self, text: str) -> None:
+    async def _speak(self, text: str, record: bool = True) -> None:
         text = _strip_markdown(text)
         if not text.strip():
             return
@@ -284,17 +278,30 @@ class VoiceSession:
                 if lead > TTS_MAX_LEAD_S:
                     await asyncio.sleep(lead - TTS_MAX_LEAD_S)
                 if self._interrupt.is_set():
-                    break
+                    return
                 await self._send_bytes(chunk)
+                if self._trace.first_audio_ms is None:
+                    self._trace.first_audio_ms = self._elapsed_ms()
                 self._playing_until = max(time.monotonic(), self._playing_until) + len(chunk) / TTS_BYTES_PER_SEC
+        if record:
+            self._spoken.append((text + " ", self._playing_until))
 
     async def _stop_turn(self) -> None:
-        """Cancel whatever turn is in flight: LLM stream, turn task (and its TTS), speculative STT."""
+        """Cancel whatever turn is in flight (LLM stream, tools, TTS, speculative STT), then rewrite the
+        conversation to what the user actually heard. Cancelling the turn task closes the LLM stream,
+        which aborts the HTTP request, so a self-hosted server frees the batch slot right away."""
         self._interrupt.set()
-        await self._llm.cancel()
-        if self._turn_task:
-            self._turn_task.cancel()
+        now = time.monotonic()
+        task = self._turn_task
+        running = task is not None and not task.done()
+        if running:
+            task.cancel()
+            await asyncio.wait([task])  # let the agent loop record tool results before history is rewritten
         self._cancel_speculative_stt()
+        if (running and self._turn_open) or any(end > now for _, end in self._spoken):
+            self._conversation.mark_interrupted("".join(t for t, end in self._spoken if end <= now))
+        self._spoken = []
+        self._turn_open = False
 
     async def _barge_in(self) -> None:
         logger.info("barge-in detected")

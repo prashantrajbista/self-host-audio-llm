@@ -3,14 +3,14 @@ from server.adapters.stt.base import STTAdapter
 from server.adapters.tts.base import TTSAdapter
 from server.config import Settings
 
-# STT/TTS adapters hold no per-connection state and are expensive to construct (model load /
-# HF download), so cache them as process-wide singletons keyed by their own config — reloading
-# per WS connection blocked the event loop long enough to time out the handshake itself. LLM
-# adapters carry per-connection cancel state (barge-in) and are cheap to build (no model load),
-# so those stay fresh per connection. Settings itself isn't hashable, so key on the relevant
-# fields rather than lru_cache-ing the Settings object directly.
+# Adapters hold no per-connection state, so cache them as process-wide singletons keyed by their own
+# config. STT/TTS are expensive to construct (model load / HF download) — reloading per WS connection
+# blocked the event loop long enough to time out the handshake itself. The LLM adapter is shared so its
+# fallback circuit-breaker state is process-wide. Settings itself isn't hashable, so key on the
+# relevant fields rather than lru_cache-ing the Settings object directly.
 _stt_cache: dict[tuple, STTAdapter] = {}
 _tts_cache: dict[tuple, TTSAdapter] = {}
+_llm_cache: dict[tuple, LLMAdapter] = {}
 
 
 def get_stt(settings: Settings) -> STTAdapter:
@@ -33,19 +33,31 @@ def get_stt(settings: Settings) -> STTAdapter:
 
 
 def get_llm(settings: Settings) -> LLMAdapter:
-    if settings.llm_backend == "ollama":
-        from server.adapters.llm.ollama_adapter import OllamaAdapter
+    """OpenAI, vLLM and Ollama all speak the OpenAI-compatible API; LLM_BACKEND is just the primary's label.
+    Stateless (cancel = close the stream), so one instance serves every session."""
+    key = (
+        settings.llm_backend, settings.llm_endpoint, settings.llm_model, settings.openai_api_key,
+        settings.llm_fallback_endpoint, settings.llm_fallback_model, settings.llm_fallback_api_key,
+        settings.llm_first_token_timeout,
+    )
+    if key not in _llm_cache:
+        from server.adapters.llm.fallback import FallbackLLM
+        from server.adapters.llm.openai_compat_adapter import OpenAICompatAdapter
 
-        return OllamaAdapter(endpoint=settings.llm_endpoint, model=settings.llm_model)
-    if settings.llm_backend == "vllm":
-        from server.adapters.llm.vllm_adapter import VLLMAdapter
-
-        return VLLMAdapter(endpoint=settings.llm_endpoint, model=settings.llm_model)
-    if settings.llm_backend == "openai":
-        from server.adapters.llm.openai_adapter import OpenAIAdapter
-
-        return OpenAIAdapter(endpoint=settings.llm_endpoint, model=settings.llm_model, api_key=settings.openai_api_key)
-    raise ValueError(f"Unknown LLM_BACKEND: {settings.llm_backend}")
+        backends: list[LLMAdapter] = [
+            OpenAICompatAdapter(settings.llm_backend, settings.llm_endpoint, settings.llm_model, settings.openai_api_key)
+        ]
+        if settings.llm_fallback_endpoint:
+            backends.append(
+                OpenAICompatAdapter(
+                    "fallback",
+                    settings.llm_fallback_endpoint,
+                    settings.llm_fallback_model or settings.llm_model,
+                    settings.llm_fallback_api_key,
+                )
+            )
+        _llm_cache[key] = FallbackLLM(backends, first_event_timeout=settings.llm_first_token_timeout)
+    return _llm_cache[key]
 
 
 def get_tts(settings: Settings) -> TTSAdapter:

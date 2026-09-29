@@ -4,11 +4,11 @@ Run: python -m tests.test_session
 
 import asyncio
 
-from server.adapters.llm.base import LLMAdapter
+from server.adapters.llm.base import Done, LLMAdapter, TextDelta
 from server.adapters.stt.base import STTAdapter, TranscriptEvent
 from server.adapters.tts.base import TTSAdapter
 from server.config import Settings, resolve_voice
-from server.gateway.session import VoiceSession, _split_speakable
+from server.gateway.session import SPEECH_FRAMES_START_THRESHOLD, VoiceSession, _split_speakable
 
 SPEECH_FRAME = b"\x01" + b"\x00" * 639
 SILENCE_FRAME = b"\x00" * 640
@@ -26,17 +26,17 @@ class FakeSTT(STTAdapter):
 
 class FakeLLM(LLMAdapter):
     def __init__(self):
-        self.cancelled = False
+        self.closed = False  # generator closed mid-stream = HTTP request aborted
 
-    async def generate_stream(self, messages):
-        for word in ["Hi", " there", "."]:
-            if self.cancelled:
-                return
-            await asyncio.sleep(0.01)
-            yield word
-
-    async def cancel(self):
-        self.cancelled = True
+    async def generate_stream(self, messages, tools=None, **params):
+        try:
+            for word in ["Hi", " there", "."]:
+                await asyncio.sleep(0.01)
+                yield TextDelta(word)
+            yield Done("stop", None, "fake")
+        except BaseException:
+            self.closed = True
+            raise
 
 
 class FakeTTS(TTSAdapter):
@@ -81,11 +81,9 @@ async def main():
     audio_chunks.clear()
     session.state = "speaking"
     session._interrupt.clear()
-    llm2 = session._llm
     for _ in range(8):
         await session.handle_audio_frame(SPEECH_FRAME)
     assert session._interrupt.is_set()
-    assert llm2.cancelled
     assert any(e["type"] == "interrupt" for e in events), events
     print("barge-in PASS")
 
@@ -95,7 +93,7 @@ async def main():
         stt=FakeSTT(), llm=FakeLLM(), tts=FakeTTS(), vad=FakeVAD(),
         send_json=send_json, send_bytes=send_bytes,
     )
-    for _ in range(3):  # below SPEECH_FRAMES_START_THRESHOLD (5)
+    for _ in range(SPEECH_FRAMES_START_THRESHOLD - 1):
         await session2.handle_audio_frame(SPEECH_FRAME)
     for _ in range(5):
         await session2.handle_audio_frame(SILENCE_FRAME)
@@ -129,7 +127,6 @@ async def main():
     await session4.interrupt()
     await asyncio.sleep(0)
     assert session4._turn_task.cancelled()
-    assert session4._llm.cancelled
     assert session4.state == "idle", session4.state
     session4.state = "idle"
     events.clear()

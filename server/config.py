@@ -13,6 +13,12 @@ class Settings(BaseSettings):
 
     llm_model: str = "gpt-4o-mini"
     openai_api_key: str = ""
+    llm_first_token_timeout: float = 15.0  # s before retry/failover; ~2-3 when a fallback backend is set
+    # optional secondary LLM (self-host <-> API either way); empty endpoint disables it
+    llm_fallback_endpoint: str = ""
+    llm_fallback_model: str = ""
+    llm_fallback_api_key: str = ""
+    agent: str = "assistant"  # default agent definition (server/agent/agents.py), per-session ?agent= overrides
     whisper_model: str = "small.en"
     tts_voice: str = "af_heart"  # default voice
     tts_speed: float = 1.15  # Kokoro speaking rate multiplier, 1.0 = normal
