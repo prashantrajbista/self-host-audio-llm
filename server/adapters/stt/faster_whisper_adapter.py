@@ -35,7 +35,9 @@ class FasterWhisperAdapter(STTAdapter):
             audio, language="en", beam_size=1, without_timestamps=True, condition_on_previous_text=False
         )
         # segments is lazy — the actual decode runs during this join, so it must stay in the thread
-        return " ".join(segment.text.strip() for segment in segments)
+        # Whisper's own "this was silence" rule: high no-speech probability with a low-confidence decode is a
+        # hallucination on noise ("Thank you.", "you"), not something the user said
+        return " ".join(s.text.strip() for s in segments if not (s.no_speech_prob > 0.6 and s.avg_logprob < -1.0))
 
     async def transcribe_stream(self, audio_chunk: bytes) -> AsyncIterator[TranscriptEvent]:
         # off the event loop: inference here blocked WS receive (and barge-in detection) for its full duration

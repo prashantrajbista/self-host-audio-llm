@@ -113,6 +113,11 @@ export function useVoiceSession() {
           playerRef.current?.stopAll();
           setInterruptTick((t) => t + 1);
         },
+        // a turn failed server-side (session stays up): chime and show what the assistant is saying
+        onServerError: (message) => {
+          feedback("error");
+          setTurns((t) => [...t, { role: "assistant", text: message }]);
+        },
         onAudioChunk: (chunk) => {
           if (thinkingAtRef.current !== null) {
             const ms = performance.now() - thinkingAtRef.current;

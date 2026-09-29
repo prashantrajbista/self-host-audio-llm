@@ -4,13 +4,15 @@ type ServerMessage =
   | { type: "state"; data: OrbState }
   | { type: "partial_transcript"; data: string }
   | { type: "token"; data: string }
-  | { type: "interrupt"; data: null };
+  | { type: "interrupt"; data: null }
+  | { type: "error"; data: string };
 
 export interface VoiceSocketHandlers {
   onState: (state: OrbState) => void;
   onPartialTranscript: (text: string) => void;
   onToken: (text: string) => void;
   onInterrupt: () => void;
+  onServerError: (message: string) => void;
   onAudioChunk: (chunk: ArrayBuffer) => void;
   onOpen: () => void;
   onClose: () => void;
@@ -35,6 +37,7 @@ export function connectVoiceSocket(
       if (msg.type === "partial_transcript") handlers.onPartialTranscript(msg.data);
       if (msg.type === "token") handlers.onToken(msg.data);
       if (msg.type === "interrupt") handlers.onInterrupt();
+      if (msg.type === "error") handlers.onServerError(msg.data);
     } else {
       handlers.onAudioChunk(event.data as ArrayBuffer);
     }

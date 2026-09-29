@@ -22,6 +22,11 @@ SILENCE_FRAMES_END_OF_TURN = 25  # ~500ms of trailing silence ends the utterance
 SILENCE_FRAMES_SPECULATIVE_STT = 10
 SPEECH_FRAMES_START_THRESHOLD = 3  # ~60ms of consecutive speech before committing — filters noise blips
 PREROLL_FRAMES = 15  # ~300ms kept from before speech was detected, so soft onsets ("h" in "hi") aren't clipped
+LLM_FIRST_TOKEN_TIMEOUT = 15.0  # s; a hung request would otherwise leave the session stuck in "thinking"
+LLM_RETRIES = 1  # retried only before the first token, so a partial reply is never repeated
+FALLBACK_LINE = "Sorry, I had trouble with that. Could you say it again?"
+# Whisper's classic outputs on noise-only audio; "thank you" alone is left out because users do say it
+_STT_HALLUCINATIONS = {"you", "thanks for watching", "thank you for watching"}
 FIRST_CHUNK_MIN_WORDS = 3  # the first TTS chunk may end at a comma once it has this many words
 # Everything the model writes is spoken aloud by TTS, so ask for speakable text up front rather than
 # relying only on _strip_markdown after the fact (which remains as a safety net).
@@ -35,6 +40,8 @@ SYSTEM_PROMPT = (
     "- Write numbers, dates, times, units, and symbols the way they're said: \"twenty-five degrees\", "
     "\"three thirty pm\", \"about five percent\", \"forty dollars\".\n"
     "- Spell out abbreviations that aren't normally said as letters, and avoid parentheses.\n"
+    "- The user's words come from speech-to-text and may contain mishearings. If a message seems oddly worded or "
+    "out of context, ask what they meant instead of guessing.\n"
     "- If the request is unclear or you didn't catch it, briefly ask the user to repeat or clarify."
 )
 
@@ -59,6 +66,12 @@ def _split_speakable(buf: str, first: bool) -> tuple[str, str] | None:
             if len(buf[: m.end()].split()) >= FIRST_CHUNK_MIN_WORDS:
                 return buf[: m.end()], buf[m.end() :]
     return None
+
+
+def _is_usable_transcript(text: str) -> bool:
+    """False for empty/punctuation-only text and Whisper's known noise hallucinations."""
+    words = re.sub(r"[^\w\s']", "", text).lower().split()
+    return bool(words) and " ".join(words) not in _STT_HALLUCINATIONS
 
 
 def _strip_markdown(text: str) -> str:
@@ -183,7 +196,7 @@ class VoiceSession:
         try:
             transcript = await stt_task
             logger.info("transcript: %r", transcript)
-            if not transcript.strip() or self._interrupt.is_set():
+            if not _is_usable_transcript(transcript) or self._interrupt.is_set():
                 await self._set_state("idle")
                 return
             await self._send_json({"type": "partial_transcript", "data": transcript})
@@ -197,7 +210,7 @@ class VoiceSession:
             reply = ""
             first = True
             messages = [Message(role="system", content=SYSTEM_PROMPT), Message(role="user", content=transcript)]
-            async for token in self._llm.generate_stream(messages):
+            async for token in self._stream_llm(messages):
                 if self._interrupt.is_set():
                     break
                 await self._send_json({"type": "token", "data": token})
@@ -219,10 +232,36 @@ class VoiceSession:
             logger.debug("turn cancelled (barge-in)")
         except Exception:
             logger.exception("turn failed")
+            if speaker:
+                speaker.cancel()
+            await self._send_json({"type": "error", "data": FALLBACK_LINE})
+            try:
+                await self._speak(FALLBACK_LINE)
+            except Exception:
+                logger.exception("fallback speech failed")
             await self._set_state("idle")
         finally:
             if speaker:
                 speaker.cancel()
+
+    async def _stream_llm(self, messages: list[Message]):
+        """LLM tokens with a first-token timeout and retry; retrying is only safe before anything was yielded."""
+        for attempt in range(LLM_RETRIES + 1):
+            gen = self._llm.generate_stream(messages)
+            got_token = False
+            try:
+                while True:
+                    token = await asyncio.wait_for(anext(gen), None if got_token else LLM_FIRST_TOKEN_TIMEOUT)
+                    got_token = True
+                    yield token
+            except StopAsyncIteration:
+                return
+            except Exception:
+                if got_token or attempt == LLM_RETRIES:
+                    raise
+                logger.warning("llm failed before first token, retrying", exc_info=True)
+            finally:
+                await gen.aclose()
 
     async def _speaker(self, queue: "asyncio.Queue[str | None]") -> None:
         while (text := await queue.get()) is not None:
