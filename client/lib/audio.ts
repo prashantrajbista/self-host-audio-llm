@@ -28,8 +28,10 @@ export function audioLevel(analyser: AnalyserNode | null): number {
   return Math.min(1, Math.sqrt(sum / buf.length) * 6);
 }
 
-// ponytail: fixed schedule-ahead queue, no jitter buffer/backpressure handling —
-// add if playback stutters under real network conditions.
+// ponytail: schedule-ahead queue with a fixed 60ms start lead (the server paces sends) —
+// add an adaptive jitter buffer if playback stutters under real network conditions.
+const JITTER_S = 0.06;
+
 export class Player {
   private ctx: AudioContext;
   private nextTime: number;
@@ -44,7 +46,7 @@ export class Player {
   }
 
   playChunk(arrayBuffer: ArrayBuffer): void {
-    const int16 = new Int16Array(arrayBuffer);
+    const int16 = new Int16Array(arrayBuffer, 0, arrayBuffer.byteLength >> 1); // ignore a stray odd byte
     const float32 = new Float32Array(int16.length);
     for (let i = 0; i < int16.length; i++) float32[i] = int16[i] / 32768;
 
@@ -57,7 +59,9 @@ export class Player {
     this.sources.add(src);
     src.onended = () => this.sources.delete(src);
 
-    const startAt = Math.max(this.ctx.currentTime, this.nextTime);
+    // queue ran dry (or first chunk): start a little ahead so a slightly late next chunk doesn't underrun
+    const now = this.ctx.currentTime;
+    const startAt = this.nextTime > now ? this.nextTime : now + JITTER_S;
     src.start(startAt);
     this.nextTime = startAt + buf.duration;
   }

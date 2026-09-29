@@ -1,4 +1,5 @@
 import asyncio
+from contextlib import aclosing
 import logging
 import re
 import time
@@ -24,6 +25,8 @@ SPEECH_FRAMES_START_THRESHOLD = 3  # ~60ms of consecutive speech before committi
 PREROLL_FRAMES = 15  # ~300ms kept from before speech was detected, so soft onsets ("h" in "hi") aren't clipped
 LLM_FIRST_TOKEN_TIMEOUT = 15.0  # s; a hung request would otherwise leave the session stuck in "thinking"
 LLM_RETRIES = 1  # retried only before the first token, so a partial reply is never repeated
+TTS_BYTES_PER_SEC = 24000 * 2  # PCM16 @ 24kHz, what the client Player plays back
+TTS_MAX_LEAD_S = 3.0  # don't send audio more than this far ahead of playback: bounds client memory and barge-in cleanup
 FALLBACK_LINE = "Sorry, I had trouble with that. Could you say it again?"
 # Whisper's classic outputs on noise-only audio; "thank you" alone is left out because users do say it
 _STT_HALLUCINATIONS = {"you", "thanks for watching", "thank you for watching"}
@@ -114,6 +117,7 @@ class VoiceSession:
         self._speech_started = False
         self._silence_frames = 0
         self._pending_frames: list[bytes] = []
+        self._playing_until = 0.0  # monotonic time the client should finish playing everything sent so far
         self._preroll: deque[bytes] = deque(maxlen=PREROLL_FRAMES)
         self._interrupt = asyncio.Event()
         self._turn_task: asyncio.Task | None = None
@@ -134,7 +138,9 @@ class VoiceSession:
                 return
             # a turn is in flight (still transcribing/generating, or already speaking): new speech
             # replaces it — otherwise a second turn would start alongside the first and both reply
-            if self.state in ("thinking", "speaking"):
+            # Synthesis runs far faster than real time, so state is "idle" while the client is still playing
+            # seconds of queued audio: treat that as speaking too, or the client is never told to stop.
+            if self.state in ("thinking", "speaking") or time.monotonic() < self._playing_until:
                 await self._barge_in()
             else:
                 self._speech_started = True
@@ -271,10 +277,16 @@ class VoiceSession:
         text = _strip_markdown(text)
         if not text.strip():
             return
-        async for chunk in self._tts.synthesize_stream(text, voice=self._voice):
-            if self._interrupt.is_set():
-                break
-            await self._send_bytes(chunk)
+        # aclosing: breaking out on interrupt must close the TTS stream now, not whenever GC gets to it
+        async with aclosing(self._tts.synthesize_stream(text, voice=self._voice)) as stream:
+            async for chunk in stream:
+                lead = self._playing_until - time.monotonic()
+                if lead > TTS_MAX_LEAD_S:
+                    await asyncio.sleep(lead - TTS_MAX_LEAD_S)
+                if self._interrupt.is_set():
+                    break
+                await self._send_bytes(chunk)
+                self._playing_until = max(time.monotonic(), self._playing_until) + len(chunk) / TTS_BYTES_PER_SEC
 
     async def _stop_turn(self) -> None:
         """Cancel whatever turn is in flight: LLM stream, turn task (and its TTS), speculative STT."""
@@ -287,6 +299,7 @@ class VoiceSession:
     async def _barge_in(self) -> None:
         logger.info("barge-in detected")
         await self._stop_turn()
+        self._playing_until = 0.0
         await self._send_json({"type": "interrupt"})
         self._audio_buffer.clear()
         self._speech_started = True
@@ -296,6 +309,7 @@ class VoiceSession:
     async def interrupt(self) -> None:
         """Client-initiated stop (tap on the orb): drop the current reply and wait for new speech.
         No-op when nothing is in flight. The client already stopped its own playback."""
+        self._playing_until = 0.0
         if self.state not in ("thinking", "speaking"):
             return
         logger.info("client interrupt")

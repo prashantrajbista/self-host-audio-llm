@@ -15,6 +15,11 @@ class HTTPTTSAdapter(TTSAdapter):
             "POST", f"{self._endpoint}/synthesize", json={"text": text_chunk, "voice": voice}
         ) as response:
             response.raise_for_status()
+            # network chunks can end mid-sample; the client reads int16, so only whole samples go out
+            carry = b""
             async for chunk in response.aiter_bytes():
-                if chunk:
-                    yield chunk
+                data = carry + chunk
+                whole = len(data) & ~1
+                carry = data[whole:]
+                if whole:
+                    yield data[:whole]
