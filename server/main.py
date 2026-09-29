@@ -1,4 +1,7 @@
 import io
+import json
+import re
+from pathlib import Path
 from contextlib import asynccontextmanager
 
 import numpy as np
@@ -6,6 +9,7 @@ import soundfile as sf
 from fastapi import FastAPI, HTTPException, Response, WebSocket
 
 from server.agent.interview import load_packs
+from server.agent.scoring import report_path
 from server.config import get_settings
 from server.gateway.factory import get_stt, get_tts
 from server.gateway.ws_handler import websocket_endpoint
@@ -37,6 +41,19 @@ async def health():
 @app.websocket("/ws")
 async def ws_route(websocket: WebSocket):
     await websocket_endpoint(websocket)
+
+
+@app.get("/interviews/{interview_id}/report")
+async def interview_report(interview_id: str):
+    """Feedback report: {"status": "scoring"} until grading finishes, then the full report (or "failed")."""
+    if not re.fullmatch(r"[0-9a-f]{32}", interview_id):  # ids are uuid4 hex; also blocks path traversal
+        raise HTTPException(status_code=404, detail="unknown interview")
+    record = Path(get_settings().interviews_dir) / f"{interview_id}.json"
+    if report_path(record).exists():
+        return json.loads(report_path(record).read_text())
+    if record.exists():
+        return {"status": "scoring"}
+    raise HTTPException(status_code=404, detail="unknown interview")
 
 
 _previews: dict[str, bytes] = {}

@@ -9,6 +9,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 
 from server.agent.agents import get_agent
 from server.agent.interview import INTERVIEW_TYPES, KICKOFF, SENIORITIES, Interview, load_packs, plan_questions
+from server.agent.scoring import score_file
 from server.config import Settings, get_settings, resolve_voice
 from server.gateway.factory import get_llm, get_stt, get_tts
 from server.gateway.session import VoiceSession
@@ -24,6 +25,7 @@ POLICY_CLOSE_CODE = 1008  # bad interview parameters
 INTERVIEW_GRACE_MIN = 2  # hard stop this long after the pack's duration, if the interviewer never wraps up
 
 _active_sessions = 0
+_scoring: set[asyncio.Task] = set()  # strong refs: a bare create_task can be garbage-collected mid-run
 
 
 async def websocket_endpoint(ws: WebSocket) -> None:
@@ -104,8 +106,10 @@ async def _run_session(ws: WebSocket, client: str, settings: Settings) -> None:
         if watcher:
             watcher.cancel()
         session.close()
-        if interview:
-            _save_interview(settings, interview_id, interview.record(session.turns))
+        if interview and (path := _save_interview(settings, interview_id, interview.record(session.turns))):
+            task = asyncio.create_task(score_file(path, settings))
+            _scoring.add(task)
+            task.add_done_callback(_scoring.discard)
 
 
 def _make_interview(params, settings: Settings, emit) -> Interview | None:
@@ -129,10 +133,11 @@ async def _watch_interview(ws: WebSocket, session: VoiceSession, interview: Inte
     await ws.close()
 
 
-def _save_interview(settings: Settings, interview_id: str, record: dict) -> None:
-    if not record["turns"]:
-        return  # hung up before saying anything: nothing to score
+def _save_interview(settings: Settings, interview_id: str, record: dict) -> Path | None:
+    if not any(t["role"] == "user" for t in record["turns"]):
+        return None  # the candidate never answered: nothing to score
     path = Path(settings.interviews_dir) / f"{interview_id}.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(record, indent=2))
     logger.info("interview saved: %s", path)
+    return path

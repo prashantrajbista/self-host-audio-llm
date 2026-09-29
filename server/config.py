@@ -21,6 +21,10 @@ class Settings(BaseSettings):
     agent: str = "assistant"  # default agent definition (server/agent/agents.py), per-session ?agent= overrides
     packs_dir: str = "packs"  # interview packs (packs/*.toml); a session with ?pack= runs a mock interview
     interviews_dir: str = "data/interviews"  # finished interview records (local JSON until Supabase)
+    # interview grading model (any OpenAI-compatible API); empty fields reuse the LLM_* settings
+    scoring_endpoint: str = ""
+    scoring_model: str = ""
+    scoring_api_key: str = ""
     whisper_model: str = "small.en"
     tts_voice: str = "af_heart"  # default voice
     tts_speed: float = 1.15  # Kokoro speaking rate multiplier, 1.0 = normal

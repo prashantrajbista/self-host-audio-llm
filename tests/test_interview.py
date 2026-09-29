@@ -3,12 +3,14 @@ Run: python -m tests.test_interview
 """
 
 import asyncio
+import json
 import random
 import tempfile
 from pathlib import Path
 
 from server.adapters.llm.base import ToolCall
 from server.agent.interview import KICKOFF, WRAP_UP, Interview, load_packs, plan_questions
+from server.agent.scoring import delivery, score_interview, split_answers, verdict, weighted_score
 from server.gateway.session import VoiceSession
 from tests.test_agent import ScriptedLLM, text
 from tests.test_session import SILENCE_FRAME, SPEECH_FRAME, FakeSTT, FakeTTS, FakeVAD
@@ -99,10 +101,62 @@ async def test_session_kickoff_and_turns():
     print("session kickoff + timed turns PASS")
 
 
+def _record():
+    turn = lambda role, text, start, end: {"role": role, "text": text, "start": start, "end": end}  # noqa: E731
+    return {
+        "pack_id": "tech_behavioral", "role": "SWE", "seniority": "mid", "type": "mixed", "completed": True,
+        "questions": [
+            {"id": "opener", "text": "Background?", "asked_at": 100.0},
+            {"id": "conflict", "text": "Conflict?", "asked_at": 130.0},
+            {"id": "failure", "text": "Failure?", "asked_at": None},  # never reached
+        ],
+        "turns": [
+            turn("assistant", "Tell me your background.", 101, 103),
+            turn("user", "um I build backend systems you know at scale", 104, 110),  # 2 fillers
+            turn("assistant", "Which ones?", 111, 112),  # follow-up: still question 0
+            turn("user", "payments", 114, 115),
+            turn("assistant", "Tell me about a conflict.", 131, 133),
+            turn("user", "we argued and I wrote a design doc", 134, 140),
+        ],
+    }
+
+
+async def test_scoring():
+    pack = load_packs("packs")["tech_behavioral"]
+    record = _record()
+    answers = split_answers(record)
+    assert [len(a["turns"]) for a in answers] == [4, 2], "follow-ups stay with their main question"
+    d = delivery(answers[0]["turns"])
+    assert (d["words"], d["fillers"], d["speech_s"], d["wpm"]) == (10, 2, 7, 86), d
+    assert d["avg_latency_s"] == 1.5, d  # (104-103 + 114-112) / 2
+
+    names = [r["name"] for r in pack["rubric"]]
+    assert weighted_score(pack, dict.fromkeys(names, 1)) == 0 and weighted_score(pack, dict.fromkeys(names, 5)) == 100
+    assert verdict(pack, 85) == "Strong hire" and verdict(pack, 84) == "Hire" and verdict(pack, 0) == "No hire"
+
+    good = {"scores": dict.fromkeys(names, 4), "strengths": ["clear"], "improvements": ["add numbers"], "improved_answer": "I led..."}
+    low = {"scores": {**dict.fromkeys(names, 3), "impact": 1}}
+    llm = ScriptedLLM([
+        text("Sure! " + json.dumps(good)),  # prose around JSON is tolerated
+        text("not json"),  # answer 2: first attempt unparseable -> retried
+        text(json.dumps(low)),
+    ])
+    report = await score_interview(record, pack, llm)
+    assert report["status"] == "scored" and all(a["scored"] for a in report["answers"]), report
+    assert report["answers"][0]["score"] == 75 and report["answers"][0]["strengths"] == ["clear"]
+    assert report["top_fix"] == "impact" and report["verdict"] == verdict(pack, report["overall_score"])
+    assert 0 < report["delivery"]["talk_ratio"] < 1
+
+    failing = await score_interview(record, pack, ScriptedLLM([text("nope")] * 4))
+    assert failing["status"] == "failed" and not any(a["scored"] for a in failing["answers"])
+    print("scoring PASS")
+
+
 async def main():
     test_packs()
     await test_question_flow()
     await test_session_kickoff_and_turns()
+    await test_scoring()
 
 
 if __name__ == "__main__":
