@@ -16,7 +16,7 @@ services:
       TTS_BACKEND: remote
       TTS_ENDPOINT: http://tts:8002
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
-      VAD_THRESHOLD: ${VAD_THRESHOLD:-0.5}
+      VAD_THRESHOLD: ${VAD_THRESHOLD:-0.35}
     depends_on:
       - stt
       - tts

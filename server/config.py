@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     codec_enabled: bool = False
     device: str = "cpu"
     log_level: str = "INFO"
-    vad_threshold: float = 0.5  # silero speech probability cutoff, 0-1
+    vad_threshold: float = 0.35  # silero speech probability cutoff, 0-1
 
     class Config:
         env_file = ".env"

@@ -11,7 +11,10 @@ export async function startMic(
   const source = ctx.createMediaStreamSource(stream);
   const node = new AudioWorkletNode(ctx, "recorder-worklet");
   node.port.onmessage = (e: MessageEvent<ArrayBuffer>) => onFrame(e.data);
-  source.connect(node);
+  // software boost for distant/quiet speech (browser AGC alone doesn't lift enough); worklet clamps peaks
+  const gain = ctx.createGain();
+  gain.gain.value = 2;
+  source.connect(gain).connect(node);
   const analyser = ctx.createAnalyser();
   source.connect(analyser);
   return { ctx, stream, analyser };
