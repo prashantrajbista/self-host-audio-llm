@@ -253,7 +253,7 @@ async def checkout(body: CheckoutRequest, uid: str = Depends(_user)):
     if not product:
         raise HTTPException(422, "unknown product")
     try:
-        return {"url": await billing.create_checkout(get_settings(), uid, product)}
+        return await billing.create_checkout(get_settings(), uid, product)
     except billing.BillingError as e:
         logger.error("checkout unavailable: %s", e)
         raise HTTPException(503, "Payments aren't available right now. Try again later.") from e
@@ -261,16 +261,16 @@ async def checkout(body: CheckoutRequest, uid: str = Depends(_user)):
 
 @router.post("/billing/webhook")
 async def webhook(request: Request, db: AsyncSession = Depends(get_db)):
-    """Stripe -> us. Signature checked on the raw body; 2xx tells Stripe to stop retrying."""
+    """Payment provider -> us. Signature checked on the raw body; 2xx tells the provider to stop retrying."""
     try:
-        purchase = billing.parse_webhook(get_settings(), await request.body(), request.headers.get("stripe-signature", ""))
+        purchase = billing.parse_webhook(get_settings(), await request.body(), request.headers)
     except ValueError as e:
         raise HTTPException(400, "invalid webhook") from e
     if purchase:
         granted = await repo.grant(
             db, purchase.user_id, product=purchase.product.id, credits=purchase.product.credits,
             pass_days=purchase.product.pass_days, event_id=purchase.event_id, session_id=purchase.session_id,
-            amount_total=purchase.amount_total, currency=purchase.currency,
+            amount_total=purchase.amount_total, currency=purchase.currency, provider=purchase.provider,
         )
         logger.info("payment %s for %s: %s", purchase.session_id, purchase.user_id, "granted" if granted else "duplicate")
     return {"ok": True}

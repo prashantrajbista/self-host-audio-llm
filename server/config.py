@@ -40,7 +40,14 @@ class Settings(BaseSettings):
     files_secret: str = Field(default_factory=lambda: secrets.token_hex(32))  # signs local file URLs
     public_base_url: str = "http://localhost:8000"  # this gateway as browsers reach it (local file URLs)
     site_url: str = "http://localhost:3000"  # the web app (payment return links)
-    # payments (Stripe Checkout, one-time prices created in the Stripe dashboard)
+    # payments: "paddle" (merchant of record, works for Nepal) or "stripe"
+    payment_provider: str = "paddle"
+    paddle_env: str = "sandbox"  # sandbox | production (separate Paddle accounts, keys and price ids)
+    paddle_api_key: str = ""  # server only; permission: Transactions read + write
+    paddle_webhook_secret: str = ""  # the notification destination's secret key
+    paddle_price_credits_5: str = ""
+    paddle_price_pass_30: str = ""
+    # Stripe Checkout, one-time prices created in the Stripe dashboard
     stripe_secret_key: str = ""  # server only
     stripe_webhook_secret: str = ""  # whsec_...: verifies /billing/webhook calls really come from Stripe
     stripe_price_credits_5: str = ""

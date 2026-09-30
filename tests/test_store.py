@@ -224,6 +224,7 @@ def test_billing():
 
     asyncio.run(fresh_db("billing.db"))
     settings = get_settings()
+    settings.payment_provider = "stripe"
     settings.stripe_webhook_secret = "whsec_test"
     app = FastAPI()
     app.include_router(api.router)
@@ -266,17 +267,78 @@ def test_billing():
 
     async def fake_checkout(_settings, uid, product):
         calls.append((uid, product.id))
-        return "https://checkout.stripe.test/x"
+        return {"provider": "stripe", "url": "https://checkout.stripe.test/x"}
 
     billing.create_checkout, real = fake_checkout, billing.create_checkout
     try:
         assert client.post("/billing/checkout", json={"product": "nope"}, headers={"Authorization": "Bearer alice"}).status_code == 422
         r = client.post("/billing/checkout", json={"product": "pass_30"}, headers={"Authorization": "Bearer alice"})
-        assert r.json() == {"url": "https://checkout.stripe.test/x"} and calls == [("alice", "pass_30")]
+        assert r.json() == {"provider": "stripe", "url": "https://checkout.stripe.test/x"} and calls == [("alice", "pass_30")]
     finally:
         billing.create_checkout = real
     assert [p["id"] for p in client.get("/billing/products").json()] == ["credits_5", "pass_30"]
-    print("billing PASS")
+    print("billing (stripe) PASS")
+
+
+def test_paddle():
+    from server.billing import paddle_provider
+    from server.config import get_settings
+
+    asyncio.run(fresh_db("paddle.db"))
+    s = get_settings()
+    s.payment_provider, s.paddle_env, s.paddle_api_key = "paddle", "sandbox", "pdl_sdbx_test"
+    s.paddle_webhook_secret, s.paddle_price_credits_5, s.paddle_price_pass_30 = "pdl_ntfset_test", "pri_five", "pri_pass"
+    app = FastAPI()
+    app.include_router(api.router)
+    app.dependency_overrides[api._user] = lambda authorization=Header(""): authorization.removeprefix("Bearer ") or "anon"
+    client = TestClient(app)
+    alice = {"Authorization": "Bearer alice"}
+
+    def hook(event_id, txn="txn_1", product="credits_5", price="pri_five", type_="transaction.completed", secret="pdl_ntfset_test", ts=None):
+        body = json.dumps({"event_id": event_id, "event_type": type_, "data": {
+            "id": txn, "status": "completed", "currency_code": "USD", "custom_data": {"user_id": "alice", "product": product},
+            "items": [{"price": {"id": price}, "quantity": 1}], "details": {"totals": {"grand_total": "900"}},
+        }}).encode()
+        ts = ts or int(time.time())
+        h1 = hmac.new(secret.encode(), f"{ts}:".encode() + body, hashlib.sha256).hexdigest()
+        return client.post("/billing/webhook", content=body, headers={"paddle-signature": f"ts={ts};h1={h1}"})
+
+    me = lambda: client.get("/me", headers=alice).json()  # noqa: E731
+    assert hook("evt_1").status_code == 200 and me()["credits"] == 7, "5 credits granted"
+    assert hook("evt_1").status_code == 200 and hook("evt_2").status_code == 200 and me()["credits"] == 7, "resent/same txn: once"
+    assert hook("evt_3", txn="txn_2", secret="pdl_ntfset_forged").status_code == 400, "forged"
+    assert hook("evt_4", txn="txn_3", ts=int(time.time()) - 3600).status_code == 400, "stale (replay)"
+    hook("evt_5", txn="txn_4", type_="transaction.updated")
+    hook("evt_6", txn="txn_5", product="pass_30", price="pri_five")  # claims the pass but paid the $9 price
+    assert me()["credits"] == 7 and not me()["has_pass"], "other events and mismatched products grant nothing"
+    hook("evt_7", txn="txn_6", product="pass_30", price="pri_pass")
+    assert me()["has_pass"], "pass granted"
+
+    sent = []
+
+    class FakeResponse:
+        status_code = 201
+        text = ""
+
+        def json(self):
+            return {"data": {"id": "txn_new"}}
+
+    class FakeHttp:
+        async def post(self, url, json=None, headers=None):
+            sent.append((url, json, headers))
+            return FakeResponse()
+
+    real = paddle_provider.shared_client
+    paddle_provider.shared_client = lambda: FakeHttp()
+    try:
+        r = client.post("/billing/checkout", json={"product": "credits_5"}, headers=alice).json()
+    finally:
+        paddle_provider.shared_client = real
+    url, body, headers = sent[0]
+    assert r == {"provider": "paddle", "transaction_id": "txn_new"}
+    assert url == "https://sandbox-api.paddle.com/transactions" and headers["Authorization"] == "Bearer pdl_sdbx_test"
+    assert body == {"items": [{"price_id": "pri_five", "quantity": 1}], "custom_data": {"user_id": "alice", "product": "credits_5"}}
+    print("billing (paddle) PASS")
 
 
 async def main():
@@ -289,3 +351,4 @@ if __name__ == "__main__":
     test_api()
     test_share()
     test_billing()
+    test_paddle()
