@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { gatewayFetch, useRequireAuth, type Cv, type Profile } from "@/lib/supabase";
+import { gatewayFetch, supabase, useRequireAuth, type Cv, type Profile } from "@/lib/supabase";
 import { CARD, INPUT, LABEL, PAGE, PRIMARY, SECONDARY } from "@/lib/ui";
 
 // Level of the job applied for (sets the bar for questions and grading), not the candidate's experience.
@@ -120,9 +120,18 @@ export default function NewInterview() {
       <form onSubmit={start} className={`${CARD} space-y-5`}>
         <div className="flex items-baseline justify-between gap-4">
           <h1 className="text-2xl font-bold text-ink">New mock interview</h1>
-          <a href="/history" className="text-sm text-link hover:underline">
-            History
-          </a>
+          <span className="flex gap-4 text-sm">
+            <a href="/history" className="text-link hover:underline">
+              History
+            </a>
+            <button
+              type="button"
+              onClick={() => void supabase.auth.signOut().then(() => window.location.assign("/"))}
+              className="text-ink-secondary hover:text-ink"
+            >
+              Sign out
+            </button>
+          </span>
         </div>
         {credits && (
           <p className="text-sm text-ink-secondary">

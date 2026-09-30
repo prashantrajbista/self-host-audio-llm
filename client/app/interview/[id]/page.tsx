@@ -28,7 +28,7 @@ export default function InterviewCall() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const begunRef = useRef(false); // a question was asked: a refused or failed connect has nothing to save
 
-  // Upload the call recording (stored privately by the gateway), then go to history where the report lands.
+  // Upload the call recording (stored privately by the gateway), then open the report (it waits for scoring).
   const onRecording = useCallback(
     (audio: Blob) => {
       if (!begunRef.current) return;
@@ -37,7 +37,7 @@ export default function InterviewCall() {
       form.append("file", audio, `recording.${audio.type.includes("mp4") ? "m4a" : "webm"}`);
       void gatewayFetch(`/sessions/${id}/recording`, { method: "POST", body: form })
         .catch(() => {}) // the interview is still scored without a recording
-        .finally(() => window.location.assign("/history"));
+        .finally(() => window.location.assign(`/report/${id}`));
     },
     [id],
   );

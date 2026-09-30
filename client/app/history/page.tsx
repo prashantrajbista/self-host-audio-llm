@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { LEVEL_LABEL } from "@/lib/report";
 import { gatewayFetch, useRequireAuth, type InterviewSession } from "@/lib/supabase";
 import { CARD, PAGE, PRIMARY } from "@/lib/ui";
 
@@ -32,6 +33,16 @@ export default function History() {
     return () => clearTimeout(timer);
   }, [uid]);
 
+  const remove = async (row: InterviewSession) => {
+    if (!window.confirm(`Delete the ${row.role} interview from ${new Date(row.created_at).toLocaleDateString()}?`)) return;
+    try {
+      await gatewayFetch(`/sessions/${row.id}`, { method: "DELETE" });
+      setRows((list) => list?.filter((r) => r.id !== row.id) ?? null);
+    } catch {
+      window.alert("Couldn't delete it. Try again.");
+    }
+  };
+
   return (
     <main className={PAGE}>
       <div className={CARD}>
@@ -44,21 +55,33 @@ export default function History() {
         {rows?.length === 0 && <p className="mt-6 text-ink-secondary">No interviews yet.</p>}
         <ul className="mt-6 divide-y divide-divider">
           {rows?.map((r) => (
-            <li key={r.id} className="flex items-center justify-between gap-4 py-3">
-              <div>
-                <p className="font-semibold text-ink capitalize">
-                  {r.seniority} {r.role}
-                </p>
-                <p className="text-sm text-ink-secondary">{new Date(r.created_at).toLocaleString()}</p>
-              </div>
-              {r.status === "scored" ? (
-                <p className="text-right">
-                  <span className="block text-xl font-bold text-ink tabular-nums">{r.overall_score}/100</span>
-                  <span className="text-sm text-ink-secondary">{r.verdict}</span>
-                </p>
-              ) : (
-                <p className="text-sm text-ink-secondary text-right">{STATUS[r.status]}</p>
-              )}
+            <li key={r.id} className="flex items-center gap-2 py-2">
+              <a
+                href={`/report/${r.id}`}
+                className="flex flex-1 items-center justify-between gap-4 rounded-[8px] px-2 py-1 hover:bg-divider/30 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
+              >
+                <span>
+                  <span className="block font-semibold text-ink">
+                    {LEVEL_LABEL[r.seniority] ?? r.seniority} · {r.role}
+                  </span>
+                  <span className="block text-sm text-ink-secondary">{new Date(r.created_at).toLocaleString()}</span>
+                </span>
+                {r.status === "scored" ? (
+                  <span className="text-right">
+                    <span className="block text-xl font-bold text-ink tabular-nums">{r.overall_score}/100</span>
+                    <span className="text-sm text-ink-secondary">{r.verdict}</span>
+                  </span>
+                ) : (
+                  <span className="text-sm text-ink-secondary text-right">{STATUS[r.status]}</span>
+                )}
+              </a>
+              <button
+                onClick={() => void remove(r)}
+                aria-label={`Delete ${r.role} interview`}
+                className="shrink-0 rounded-full px-3 py-1 text-sm text-ink-secondary hover:text-error focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
+              >
+                Delete
+              </button>
             </li>
           ))}
         </ul>
