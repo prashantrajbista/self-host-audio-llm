@@ -2,15 +2,17 @@
 
 import { useCallback, useRef, useState } from "react";
 import { connectVoiceSocket, gatewayWsUrl, type InterviewParams, type OrbState, type Question } from "./ws";
-import { Player, audioLevel, startMic } from "./audio";
+import { Player, audioLevel, startMic, startRecording } from "./audio";
 import { feedback } from "./feedback";
 
 export type SessionState = OrbState | "disconnected";
 // mic/no-mic: couldn't get the microphone; unreachable: socket never opened; dropped: lost mid-call;
 // busy: the gateway is at its session cap and refused the call
-export type ErrorKind = "mic" | "no-mic" | "unreachable" | "dropped" | "busy";
+// refused: not allowed to start this interview; no-credits: out of mocks
+export type ErrorKind = "mic" | "no-mic" | "unreachable" | "dropped" | "busy" | "refused" | "no-credits";
 
-const BUSY_CLOSE_CODE = 1013; // server/gateway/ws_handler.py
+// server/gateway/ws_handler.py
+const CLOSE_ERRORS: Record<number, ErrorKind> = { 1013: "busy", 1008: "refused", 4402: "no-credits" };
 
 export interface Turn {
   role: "user" | "assistant";
@@ -19,7 +21,8 @@ export interface Turn {
 
 type Mic = Awaited<ReturnType<typeof startMic>>;
 
-export function useVoiceSession() {
+// onRecording: when set, both sides of the call are recorded and handed over when the call ends.
+export function useVoiceSession({ onRecording }: { onRecording?: (audio: Blob) => void } = {}) {
   const [state, setState] = useState<SessionState>("disconnected");
   const [turns, setTurns] = useState<Turn[]>([]);
   const [connecting, setConnecting] = useState(false);
@@ -34,6 +37,7 @@ export function useVoiceSession() {
   const socketRef = useRef<WebSocket | null>(null);
   const playerRef = useRef<Player | null>(null);
   const micRef = useRef<Mic | null>(null);
+  const recorderRef = useRef<ReturnType<typeof startRecording> | null>(null);
 
   // Levels 0..1, polled per animation frame by the orb, not React state. getLevel (louder of the
   // two) drives the sphere; getMicLevel alone drives the "you're being heard" ring.
@@ -46,6 +50,9 @@ export function useVoiceSession() {
   // Release mic + audio output. Shared by user hang-up and dropped connections, so the mic never
   // stays live after a call ends. Idempotent: refs are nulled as they're released.
   const teardown = useCallback(() => {
+    const recorder = recorderRef.current;
+    recorderRef.current = null;
+    if (recorder && onRecording) void recorder.stop().then(onRecording);
     const mic = micRef.current;
     micRef.current = null;
     mic?.stream.getTracks().forEach((t) => t.stop());
@@ -53,7 +60,7 @@ export function useVoiceSession() {
     playerRef.current?.close();
     playerRef.current = null;
     setMuted(false);
-  }, []);
+  }, [onRecording]);
 
   // End the current socket without its onClose treating it as a drop; shared by hang-up and failures.
   const closeSession = useCallback(
@@ -101,6 +108,7 @@ export function useVoiceSession() {
               return;
             }
             micRef.current = mic;
+            if (onRecording && playerRef.current) recorderRef.current = startRecording(playerRef.current.mixWith(mic.stream));
             setState("idle");
             setConnecting(false);
             feedback("connect");
@@ -153,7 +161,7 @@ export function useVoiceSession() {
           // only an unexpected close lands here: hang-ups and failures null socketRef first, and a
           // stale socket closing after a new call started must not tear that call down
           if (socketRef.current !== socket) return;
-          closeSession(code === BUSY_CLOSE_CODE ? "busy" : opened ? "dropped" : "unreachable");
+          closeSession(CLOSE_ERRORS[code] ?? (opened ? "dropped" : "unreachable"));
           feedback("error");
         },
         onError: () => {}, // always followed by onClose, which classifies the failure
@@ -161,7 +169,7 @@ export function useVoiceSession() {
 
       socketRef.current = socket;
     },
-    [teardown, closeSession],
+    [teardown, closeSession, onRecording],
   );
 
   const endCall = useCallback(() => {

@@ -15,13 +15,9 @@ export interface Question {
   text: string;
 }
 
-// Mock interview settings, sent as query params (server/gateway/ws_handler.py)
-export interface InterviewParams {
-  pack: string;
-  role?: string;
-  seniority?: string;
-  type?: string;
-}
+// Mock interview, sent as query params (server/gateway/ws_handler.py): {session_id, token} of a
+// signed-in user's prepared session
+export type InterviewParams = Record<string, string | undefined>;
 
 export interface VoiceSocketHandlers {
   onState: (state: OrbState) => void;

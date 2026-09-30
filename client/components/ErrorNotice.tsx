@@ -21,6 +21,16 @@ const COPY: Record<ErrorKind, { title: string; body: string; action: string }> =
     body: "Every line is taken right now. Try again in a minute.",
     action: "Try again",
   },
+  refused: {
+    title: "Can't start this interview",
+    body: "It may have already been used, or you've been signed out. Start a new one.",
+    action: "New interview",
+  },
+  "no-credits": {
+    title: "You're out of mocks",
+    body: "You've used your free mocks. Paid plans are coming soon.",
+    action: "Back",
+  },
   dropped: {
     title: "Connection lost",
     body: "The call dropped. Your conversation is still here.",

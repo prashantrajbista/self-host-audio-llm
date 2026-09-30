@@ -74,7 +74,34 @@ export class Player {
     this.nextTime = this.ctx.currentTime;
   }
 
+  // Both sides of the call mixed into one stream (for MediaRecorder): the reply audio as played here,
+  // plus the mic. Mixed in this context so they share one clock.
+  mixWith(mic: MediaStream): MediaStream {
+    const dest = this.ctx.createMediaStreamDestination();
+    this.analyser.connect(dest);
+    this.ctx.createMediaStreamSource(mic).connect(dest);
+    return dest.stream;
+  }
+
   close(): void {
     void this.ctx.close();
   }
+}
+
+// Records a stream; `stop` resolves with the audio once the recorder has flushed.
+export function startRecording(stream: MediaStream): { stop: () => Promise<Blob> } {
+  const mimeType = ["audio/webm;codecs=opus", "audio/mp4"].find((t) => MediaRecorder.isTypeSupported(t));
+  const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+  const chunks: Blob[] = [];
+  recorder.ondataavailable = (e) => e.data.size && chunks.push(e.data);
+  const done = new Promise<Blob>((resolve) => {
+    recorder.onstop = () => resolve(new Blob(chunks, { type: recorder.mimeType }));
+  });
+  recorder.start(1000); // timesliced: chunks already collected survive an abrupt teardown
+  return {
+    stop: () => {
+      if (recorder.state !== "inactive") recorder.stop();
+      return done;
+    },
+  };
 }
