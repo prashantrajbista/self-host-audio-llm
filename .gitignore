@@ -12,3 +12,8 @@ landing/
 .pytest_cache/
 *.csv
 data/
+
+# terraform: local state holds secrets
+infra/.terraform/
+infra/*.tfstate*
+infra/terraform.tfvars

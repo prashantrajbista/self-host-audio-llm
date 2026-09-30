@@ -1,0 +1,18 @@
+#cloud-config
+package_update: true
+packages:
+  - rsync
+
+write_files:
+  # cap container logs, Docker keeps them forever by default
+  - path: /etc/docker/daemon.json
+    content: |
+      {"log-driver": "json-file", "log-opts": {"max-size": "10m", "max-file": "3"}}
+
+runcmd:
+  - curl -fsSL https://get.docker.com | sh
+  - usermod -aG docker ${admin_username}
+  # swap guards against OOM kills while models load
+  - fallocate -l 4G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile
+  - echo '/swapfile none swap sw 0 0' >> /etc/fstab
+  - mkdir -p /opt/app/client && chown -R ${admin_username}:${admin_username} /opt/app

@@ -126,26 +126,48 @@ Two env profiles: `.env.local` (sqlite, Paddle sandbox, local disk storage, `tin
 Large Whisper models are too slow on CPU for live calls, so production stays on `small.en` (`base.en` if
 latency is still high). Kokoro has only one size (82M).
 
-Azure resources:
-1. **VM**: `D4as_v5` (4 vCPU, 16GB, Ubuntu). Avoid B-series (burstable CPU throttles under sustained inference).
-   Install Docker. Network security group: allow 22 (your IP only), 80 and 443.
-2. **Postgres**: Azure Database for PostgreSQL Flexible Server, `B1ms`. Create database `app`, add the VM's public
-   IP to its firewall. `DATABASE_URL=postgresql+asyncpg://...:5432/app?ssl=require`.
-3. **Storage account** (Standard LRS): a private container named like `STORAGE_BUCKET`; put the account's
-   connection string (Access keys) in `AZURE_STORAGE_CONNECTION_STRING`.
-4. **DNS**: A records for `interview.voicewire.tech` and `api.interview.voicewire.tech` pointing to the VM's IP
-   (Caddy gets TLS certificates for both on first start; the names live in `docker/Caddyfile`).
-5. Paddle live account: webhook destination `https://api.interview.voicewire.tech/billing/webhook`.
-
-On the VM:
+Azure resources are defined in `infra/` (Terraform): VM (`Standard_D4as_v5`, 4 vCPU / 16GB, Docker via
+cloud-init), static IP, NSG (22/80/443), Postgres Flexible Server (`B_Standard_B2s`, 4GB), a storage account with a
+private container, and a monthly budget alert. GitHub Actions (`.github/workflows/deploy.yml`) tests and deploys
+every push to `interview-coach`: rsync to `/opt/app` on the VM, then `docker compose up -d --build`.
 
 ```bash
-git clone <repo> && cd <repo>
-cp .env.production.example .env.production                # fill in; FILES_SECRET=$(openssl rand -hex 32)
-cp client/.env.production.example client/.env.production  # fill in
-docker compose -f docker-compose.prod.yml up -d --build   # runs migrations, then starts everything
-# update: git pull && docker compose -f docker-compose.prod.yml up -d --build
+# once: tools, login, SSH keys (yours + a separate one for GitHub Actions)
+brew install azure-cli hashicorp/tap/terraform
+az login
+export ARM_SUBSCRIPTION_ID=$(az account show --query id -o tsv)
+ssh-keygen -t ed25519 -f ~/.ssh/interview_vm -C "me@interview-vm"
+ssh-keygen -t ed25519 -f ~/.ssh/interview_deploy -C "github-actions@interview-vm" -N ""
+
+# provision
+cp infra/terraform.tfvars.example infra/terraform.tfvars   # fill in budget_email
+terraform -chdir=infra init
+terraform -chdir=infra plan
+terraform -chdir=infra apply
+VM=$(terraform -chdir=infra output -raw vm_ip)
+ssh -i ~/.ssh/interview_vm azureuser@$VM cloud-init status --wait   # Docker install finishes (~3 min)
+
+# env files -> VM (only place they live); DATABASE_URL + storage connection string come from Terraform
+cp .env.production.example .env.production                 # fill in your own secrets
+cp client/.env.production.example client/.env.production   # fill in
+{ cat .env.production; terraform -chdir=infra output -raw azure_env; } > .env.production.vm
+scp -i ~/.ssh/interview_vm .env.production.vm azureuser@$VM:/opt/app/.env.production
+scp -i ~/.ssh/interview_vm client/.env.production azureuser@$VM:/opt/app/client/.env.production
+rm .env.production.vm
+
+# GitHub Actions secrets
+gh secret set VM_HOST --body "$VM"
+gh secret set VM_USER --body azureuser
+gh secret set VM_SSH_KEY < ~/.ssh/interview_deploy
+ssh-keyscan -t ed25519 $VM | gh secret set VM_KNOWN_HOSTS
+
+# deploy: push to interview-coach (or run the workflow by hand)
+gh workflow run deploy --ref interview-coach
 ```
+
+Then point the DNS A records for `interview.voicewire.tech` and `api.interview.voicewire.tech` at `$VM`; Caddy gets
+TLS certificates once they resolve. Paddle live webhook: `https://api.interview.voicewire.tech/billing/webhook`.
+Tear everything down: `terraform -chdir=infra destroy`.
 
 Caddy is the only published service and load-balances (least connections) across the frontend and gateway
 containers: `GATEWAY_REPLICAS=2 FRONTEND_REPLICAS=2 docker compose -f docker-compose.prod.yml up -d`. On 4 vCPUs
