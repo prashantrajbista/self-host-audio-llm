@@ -24,6 +24,7 @@ dependencies = [
     "aiosqlite>=0.22.1",
     "asyncpg>=0.31.0",
     "stripe>=15.6.1",
+    "azure-storage-blob[aio]>=12.30.3",
 ]
 
 [tool.uv]

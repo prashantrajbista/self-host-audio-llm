@@ -1,5 +1,5 @@
 # Rented GPU box, vLLM leg only. Pulls the vllm/vllm-openai image. Usage:
-#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build
+#   docker compose --env-file .env.local -f docker-compose.yml -f docker-compose.gpu.yml up --build
 # Swaps LLM leg from Ollama (CPU) to vLLM (GPU). Combine with docker-compose.gpu-audio.yml
 # to also GPU-accelerate STT/TTS/VAD — they're independent, mix and match as needed.
 services:

@@ -21,5 +21,8 @@ CMD ["uvicorn", "server.services.tts_service:app", "--host", "0.0.0.0", "--port"
 
 FROM base AS gateway
 COPY client/ client/
+COPY packs/ packs/
+COPY alembic.ini .
+COPY migrations/ migrations/
 EXPOSE 8000
 CMD ["uvicorn", "server.main:app", "--host", "0.0.0.0", "--port", "8000"]

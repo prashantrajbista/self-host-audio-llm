@@ -1,6 +1,6 @@
 # Rented GPU box, STT/TTS/VAD only — no vLLM/Ollama image pulled, LLM backend stays whatever
 # docker-compose.yml/.env already picked (openai by default). Usage:
-#   docker compose -f docker-compose.yml -f docker-compose.gpu-audio.yml up --build
+#   docker compose --env-file .env.local -f docker-compose.yml -f docker-compose.gpu-audio.yml up --build
 x-gpu: &gpu
   deploy:
     resources:

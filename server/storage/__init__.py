@@ -3,12 +3,18 @@
 Keys look like "cvs/<user_id>/<file>" and "recordings/<user_id>/<session_id>.webm". Adding S3 = one more
 BlobStore subclass (put/get/delete/signed_url) and a branch in get_storage."""
 
+from datetime import UTC, datetime, timedelta
+
 import hashlib
 import hmac
 import time
 from abc import ABC, abstractmethod
 from pathlib import Path
 from urllib.parse import quote
+
+from azure.core.exceptions import ResourceNotFoundError
+from azure.storage.blob import BlobSasPermissions, ContentSettings, generate_blob_sas
+from azure.storage.blob.aio import BlobServiceClient
 
 from server.adapters.http_client import shared_client
 from server.config import Settings
@@ -65,6 +71,41 @@ class SupabaseStore(BlobStore):
         return f"{self._base}{r.json()['signedURL']}"
 
 
+class AzureBlobStore(BlobStore):
+    """Azure Blob Storage, one private container, account connection string (server only).
+    Signed URLs are read-only SAS links to a single blob."""
+
+    def __init__(self, connection_string: str, container: str):
+        self._service = BlobServiceClient.from_connection_string(connection_string)
+        self._container = self._service.get_container_client(container)
+
+    async def put(self, key: str, data: bytes, content_type: str) -> None:
+        await self._container.upload_blob(
+            key, data, overwrite=True, content_settings=ContentSettings(content_type=content_type)
+        )
+
+    async def get(self, key: str) -> bytes:
+        return await (await self._container.download_blob(key)).readall()
+
+    async def delete(self, key: str) -> None:
+        try:
+            await self._container.delete_blob(key)
+        except ResourceNotFoundError:
+            pass
+
+    async def signed_url(self, key: str, expires_s: int = 3600) -> str:
+        blob = self._container.get_blob_client(key)
+        sas = generate_blob_sas(
+            account_name=self._service.account_name,
+            container_name=self._container.container_name,
+            blob_name=key,
+            account_key=self._service.credential.account_key,
+            permission=BlobSasPermissions(read=True),
+            expiry=datetime.now(UTC) + timedelta(seconds=expires_s),
+        )
+        return f"{blob.url}?{sas}"
+
+
 class LocalStore(BlobStore):
     """Files on local disk, for development and tests. Signed URLs point at the gateway's /files route,
     which checks an HMAC signature and expiry (see `verify`)."""
@@ -108,7 +149,11 @@ _store: BlobStore | None = None
 def get_storage(settings: Settings) -> BlobStore:
     global _store
     if _store is None:
-        if settings.storage_backend == "supabase":
+        if settings.storage_backend == "azure":
+            if not settings.azure_storage_connection_string:
+                raise ValueError("STORAGE_BACKEND=azure needs AZURE_STORAGE_CONNECTION_STRING")
+            _store = AzureBlobStore(settings.azure_storage_connection_string, settings.storage_bucket)
+        elif settings.storage_backend == "supabase":
             if not (settings.supabase_url and settings.supabase_service_role_key):
                 raise ValueError("STORAGE_BACKEND=supabase needs SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY")
             _store = SupabaseStore(settings.supabase_url, settings.supabase_service_role_key, settings.storage_bucket)

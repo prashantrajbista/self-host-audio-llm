@@ -1,0 +1,96 @@
+# Production on one CPU-only VM (Azure). Needs .env.production and client/.env.production (see the
+# *.example files). Only Caddy is published; everything else is on the internal network. Usage:
+#   docker compose -f docker-compose.prod.yml up -d --build
+# More replicas: GATEWAY_REPLICAS=2 FRONTEND_REPLICAS=2 docker compose -f docker-compose.prod.yml up -d
+x-health: &health
+  interval: 10s
+  timeout: 5s
+  retries: 3
+  start_period: 300s
+
+x-python: &python
+  build: &python-build
+    context: .
+    dockerfile: docker/app.Dockerfile
+  env_file: .env.production
+  restart: unless-stopped
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    restart: unless-stopped
+    depends_on:
+      gateway:
+        condition: service_healthy
+      frontend:
+        condition: service_started
+
+  migrate:
+    <<: *python
+    build:
+      <<: *python-build
+      target: gateway
+    command: ["alembic", "upgrade", "head"]
+    restart: "no"
+
+  gateway:
+    <<: *python
+    build:
+      <<: *python-build
+      target: gateway
+    deploy:
+      replicas: ${GATEWAY_REPLICAS:-1}
+    healthcheck:
+      <<: *health
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      stt:
+        condition: service_healthy
+      tts:
+        condition: service_healthy
+
+  stt:
+    <<: *python
+    build:
+      <<: *python-build
+      target: stt
+    volumes:
+      - hf_cache:/root/.cache/huggingface
+    healthcheck:
+      <<: *health
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
+
+  tts:
+    <<: *python
+    build:
+      <<: *python-build
+      target: tts
+    volumes:
+      - hf_cache:/root/.cache/huggingface
+    healthcheck:
+      <<: *health
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8002/health')"]
+
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/frontend.Dockerfile
+    env_file: client/.env.production
+    deploy:
+      replicas: ${FRONTEND_REPLICAS:-1}
+    restart: unless-stopped
+
+volumes:
+  caddy_data:
+  caddy_config:
+  hf_cache:

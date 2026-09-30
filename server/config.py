@@ -1,3 +1,4 @@
+import os
 import secrets
 from functools import lru_cache
 
@@ -33,9 +34,10 @@ class Settings(BaseSettings):
     supabase_url: str = ""
     supabase_publishable_key: str = ""
     supabase_service_role_key: str = ""  # server only, full access: needed for STORAGE_BACKEND=supabase
-    # file storage (CVs, recordings): "supabase" (private bucket) or "local" (disk, for development)
+    # file storage (CVs, recordings): "azure" (Blob Storage), "supabase" (private bucket) or "local" (disk, development)
     storage_backend: str = "local"
-    storage_bucket: str = "interview-coach"
+    storage_bucket: str = "interview-coach"  # bucket / Azure container name
+    azure_storage_connection_string: str = ""  # server only: needed for STORAGE_BACKEND=azure
     local_storage_dir: str = "data/blobs"
     files_secret: str = Field(default_factory=lambda: secrets.token_hex(32))  # signs local file URLs
     public_base_url: str = "http://localhost:8000"  # this gateway as browsers reach it (local file URLs)
@@ -71,7 +73,7 @@ class Settings(BaseSettings):
     vad_threshold: float = 0.35  # silero speech probability cutoff, 0-1
 
     class Config:
-        env_file = ".env"
+        env_file = os.getenv("ENV_FILE", ".env.local")  # .env.local for development, .env.production on the server
 
 
 @lru_cache

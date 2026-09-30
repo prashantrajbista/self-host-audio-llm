@@ -4,8 +4,9 @@ __pycache__/
 *.pyc
 docs/
 .claude/
-.env.local
 .env
+.env.*
+!.env.*.example
 landing/
 .impeccable/
 .pytest_cache/

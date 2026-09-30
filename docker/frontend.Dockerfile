@@ -3,8 +3,7 @@ WORKDIR /app
 COPY client/package.json client/package-lock.json* ./
 RUN npm install
 COPY client/ .
-ARG NEXT_PUBLIC_GATEWAY_WS_URL
-ENV NEXT_PUBLIC_GATEWAY_WS_URL=${NEXT_PUBLIC_GATEWAY_WS_URL}
+# NEXT_PUBLIC_* come from client/.env.production (copied above), baked in at build time
 RUN npm run build
 
 FROM node:20-alpine

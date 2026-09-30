@@ -4,3 +4,11 @@ docs/
 .git/
 __pycache__/
 *.pyc
+.env
+.env.*
+# client/.env.production stays: next build reads its public NEXT_PUBLIC_* values
+client/.env.local
+data/
+client/node_modules/
+client/.next/
+.pytest_cache/

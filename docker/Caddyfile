@@ -1,0 +1,27 @@
+# Load balancer + TLS (Let's Encrypt, automatic) in front of the app. DNS A records for both names must
+# point at the VM before first start. Upstreams are resolved from Docker's DNS, so scaling a service
+# (`--scale gateway=2`) adds it to the pool without editing this file.
+
+interview.voicewire.tech {
+	encode zstd gzip
+	reverse_proxy {
+		dynamic a frontend 3000 {
+			refresh 5s
+		}
+		lb_policy least_conn
+		lb_try_duration 5s
+		fail_duration 30s
+	}
+}
+
+api.interview.voicewire.tech {
+	# /ws calls stay on one replica for their lifetime; least_conn spreads new calls by open connections
+	reverse_proxy {
+		dynamic a gateway 8000 {
+			refresh 5s
+		}
+		lb_policy least_conn
+		lb_try_duration 5s
+		fail_duration 30s
+	}
+}
