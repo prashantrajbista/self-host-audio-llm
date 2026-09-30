@@ -167,6 +167,54 @@ def test_api():
     print("api PASS")
 
 
+def test_share():
+    asyncio.run(fresh_db("share.db"))
+    app = FastAPI()
+    app.include_router(api.router)
+    app.dependency_overrides[api._user] = lambda authorization=Header(""): authorization.removeprefix("Bearer ") or "anon"
+    client = TestClient(app)
+    alice, bob = {"Authorization": "Bearer alice"}, {"Authorization": "Bearer bob"}
+    report = {
+        "status": "scored", "overall_score": 84, "verdict": "Hire", "top_strength": "impact",
+        "dimensions": {"impact": 4.5, "structure": 3.0}, "delivery": {"wpm": 140, "fillers_per_min": 1.2, "avg_answer_s": 90},
+        "answers": [{"answer_text": "I led the   migration to Postgres and cut costs by 30 percent.", "turns": []}],
+    }
+
+    async def setup():
+        async with sessions()() as db:
+            cv = await repo.add_cv(db, "alice", file_name="cv.pdf", raw_text="SECRET CV TEXT", cv_profile={"name": "Prashant Raj Bista"})
+            row = await repo.create_session(db, "alice", **new_session_fields(cv_id=cv.id, jd_text="SECRET JD"))
+            unscored = await repo.create_session(db, "alice", **new_session_fields())
+            await repo.update_session(db, row.id, status="scored", report=report, record={"turns": [{"text": "SECRET TURN"}]})
+            return str(row.id), str(unscored.id)
+
+    sid, unscored = asyncio.run(setup())
+    detail = client.get(f"/sessions/{sid}", headers=alice).json()
+    assert detail["suggested_name"] == "PR" and detail["share"]["slug"] is None
+
+    choices = {"name": "PR", "show_skills": False, "quote": "i led the migration to postgres"}
+    assert client.put(f"/sessions/{unscored}/share", json=choices, headers=alice).status_code == 404, "unscored"
+    assert client.put(f"/sessions/{sid}/share", json=choices, headers=bob).status_code == 404, "not bob's"
+    fake = choices | {"quote": "I single-handedly saved the company"}
+    assert client.put(f"/sessions/{sid}/share", json=fake, headers=alice).status_code == 422, "quote must be said"
+
+    slug = client.put(f"/sessions/{sid}/share", json=choices, headers=alice).json()["slug"]
+    card = client.get(f"/share/{slug}").json()  # no auth header: public
+    assert card["score"] == 84 and card["name"] == "PR" and card["skills"] is None and card["delivery"]["wpm"] == 140
+    public = str(card)
+    assert "SECRET" not in public and "alice" not in public, "no transcript, CV, JD or account in the card"
+    assert client.put(f"/sessions/{sid}/share", json=choices | {"show_name": False}, headers=alice).json()["slug"] == slug
+    assert client.get(f"/share/{slug}").json()["name"] is None, "update applies, same link"
+
+    assert client.delete(f"/sessions/{sid}/share", headers=alice).json() == {"ok": True}
+    assert client.get(f"/share/{slug}").status_code == 404, "revoked"
+    slug2 = client.put(f"/sessions/{sid}/share", json=choices, headers=alice).json()["slug"]
+    assert slug2 != slug and client.get(f"/share/{slug}").status_code == 404, "re-share gets a new link"
+    client.delete(f"/sessions/{sid}", headers=alice)
+    assert client.get(f"/share/{slug2}").status_code == 404, "deleted session's card is gone"
+    print("share PASS")
+
+
 async def main():
     await test_credits()
     await test_local_store()
@@ -175,3 +223,4 @@ async def main():
 if __name__ == "__main__":
     asyncio.run(main())
     test_api()
+    test_share()

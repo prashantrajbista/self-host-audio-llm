@@ -1,6 +1,7 @@
 """Every query the app makes. Functions reading or changing user data take the user id and filter by it:
 this is the access control (there is no row-level security), so keep new queries here and scoped."""
 
+import secrets
 import uuid
 from datetime import UTC, datetime
 
@@ -157,6 +158,39 @@ async def refund(db: AsyncSession, session_id: uuid.UUID) -> None:
     if undone.rowcount == 1:
         await db.execute(update(Profile).where(Profile.user_id == uid).values(credits=Profile.credits + 1))
     await db.commit()
+
+
+async def share_session(db: AsyncSession, uid: str, session_id: uuid.UUID, fields: dict) -> str | None:
+    """Publish a scored session's card with these choices; returns its slug (reused while shared)."""
+    row = await get_session(db, uid, session_id)
+    if not row or row.status != "scored":
+        return None
+    row.share_slug = row.share_slug or secrets.token_urlsafe(9)  # 12 chars, unguessable
+    row.share_fields = fields
+    row.is_public = True
+    await db.commit()
+    return row.share_slug
+
+
+async def unshare_session(db: AsyncSession, uid: str, session_id: uuid.UUID) -> bool:
+    """Unpublish and drop the slug: an old link stays dead even if the card is shared again later."""
+    done = await db.execute(
+        update(InterviewSession)
+        .where(InterviewSession.id == session_id, InterviewSession.user_id == uid, InterviewSession.deleted_at.is_(None))
+        .values(is_public=False, share_slug=None)
+    )
+    await db.commit()
+    return done.rowcount == 1
+
+
+async def get_shared(db: AsyncSession, slug: str) -> InterviewSession | None:
+    """Public lookup (no user): only published, scored, not deleted."""
+    return await db.scalar(select(InterviewSession).where(
+        InterviewSession.share_slug == slug,
+        InterviewSession.is_public.is_(True),
+        InterviewSession.status == "scored",
+        InterviewSession.deleted_at.is_(None),
+    ))
 
 
 async def update_session(db: AsyncSession, session_id: uuid.UUID, **fields) -> None:

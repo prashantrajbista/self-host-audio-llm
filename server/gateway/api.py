@@ -19,6 +19,7 @@ from server.agent.interview import cv_question_count, load_packs, plan_questions
 from server.agent.scoring import scoring_llm
 from server.auth import verify_token
 from server.config import get_settings
+from server.share import ShareChoices, initials, public_card, validate
 from server.storage import LocalStore, get_storage
 from server.store import repo
 from server.store.db import get_db
@@ -53,6 +54,7 @@ def _session_json(s: InterviewSession, full: bool = False) -> dict:
         out |= {
             "report": s.report, "has_recording": bool(s.recording_key), "jd_text": s.jd_text,
             "audio_started_at": (s.record or {}).get("audio_started_at"),
+            "share": {"slug": s.share_slug if s.is_public else None, "choices": s.share_fields},
         }
     return out
 
@@ -155,7 +157,39 @@ async def session(session_id: uuid.UUID, uid: str = Depends(_user), db: AsyncSes
     row = await repo.get_session(db, uid, session_id)
     if not row:
         raise HTTPException(404, "unknown interview")
-    return _session_json(row, full=True)
+    out = _session_json(row, full=True)
+    cv = await repo.get_cv(db, uid, row.cv_id) if row.cv_id else None
+    out["suggested_name"] = initials((cv.cv_profile or {}).get("name") if cv else None)
+    return out
+
+
+@router.put("/sessions/{session_id}/share")
+async def share(session_id: uuid.UUID, choices: ShareChoices, uid: str = Depends(_user), db: AsyncSession = Depends(get_db)):
+    """Publish (or update) the public card; returns its slug."""
+    row = await repo.get_session(db, uid, session_id)
+    if not row or row.status != "scored":
+        raise HTTPException(404, "only a scored interview can be shared")
+    try:
+        choices = validate(choices, row.report or {})
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
+    return {"slug": await repo.share_session(db, uid, session_id, choices.model_dump())}
+
+
+@router.delete("/sessions/{session_id}/share")
+async def unshare(session_id: uuid.UUID, uid: str = Depends(_user), db: AsyncSession = Depends(get_db)):
+    if not await repo.unshare_session(db, uid, session_id):
+        raise HTTPException(404, "unknown interview")
+    return {"ok": True}
+
+
+@router.get("/share/{slug}")
+async def shared_card(slug: str, db: AsyncSession = Depends(get_db)):
+    """Public, no sign-in: only what the owner chose to show (server/share.py)."""
+    row = await repo.get_shared(db, slug)
+    if not row:
+        raise HTTPException(404, "not shared")
+    return public_card(row)
 
 
 @router.delete("/sessions/{session_id}")
