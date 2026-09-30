@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { AnswerCard, DeliveryStats, ScoreBars } from "@/components/ReportParts";
+import { SharePanel } from "@/components/SharePanel";
 import { gatewayFetch, useRequireAuth } from "@/lib/supabase";
 import { LEVEL_LABEL, humanize, type SessionDetail } from "@/lib/report";
 import { CARD, PAGE, PRIMARY, SECONDARY, WIDE_CARD } from "@/lib/ui";
@@ -18,6 +19,7 @@ export default function ReportPage() {
   const [missing, setMissing] = useState(false);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [playingAt, setPlayingAt] = useState<number | null>(null);
+  const [shareOpen, setShareOpen] = useState(false);
   const audioRef = useRef<HTMLAudioElement>(null);
 
   useEffect(() => {
@@ -122,9 +124,14 @@ export default function ReportPage() {
                 {report.verdict}
               </p>
             </div>
-            <a href="/new" className={PRIMARY}>
-              New interview
-            </a>
+            <div className="flex flex-col items-end gap-2">
+              <button onClick={() => setShareOpen(true)} className={PRIMARY}>
+                Share result
+              </button>
+              <a href="/new" className={SECONDARY}>
+                New interview
+              </a>
+            </div>
           </div>
           {report.top_strength && report.top_fix && (
             <p className="mt-4 text-ink">
@@ -159,6 +166,18 @@ export default function ReportPage() {
           </a>
         </p>
       </div>
+
+      <SharePanel
+        open={shareOpen}
+        onClose={() => setShareOpen(false)}
+        sessionId={session.id}
+        report={report}
+        role={session.role}
+        seniority={session.seniority}
+        createdAt={session.created_at}
+        suggestedName={session.suggested_name}
+        initial={session.share}
+      />
 
       {audioUrl && (
         <div className="fixed inset-x-0 bottom-0 border-t border-divider bg-surface/95 px-4 py-3 backdrop-blur">

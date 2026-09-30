@@ -1,4 +1,5 @@
 // Shape of the scoring report (server/agent/scoring.py) and how the report page reads it.
+import type { ShareChoices } from "./share";
 
 export interface Turn {
   role: "user" | "assistant";
@@ -64,6 +65,8 @@ export interface SessionDetail {
   report: Report | null;
   has_recording: boolean;
   audio_started_at: number | null;
+  share: { slug: string | null; choices: ShareChoices | null };
+  suggested_name: string;
 }
 
 export const LEVEL_LABEL: Record<string, string> = { junior: "Entry level", mid: "Mid level", senior: "Senior" };
