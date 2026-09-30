@@ -8,7 +8,7 @@ import uuid
 from pathlib import PurePath
 from typing import Literal
 
-from fastapi import APIRouter, Depends, File, Header, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Header, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,6 +17,7 @@ from server.agent.cv import MAX_BYTES as MAX_CV_BYTES
 from server.agent.cv import CVError, check_jd, cv_questions, extract_text, structure
 from server.agent.interview import cv_question_count, load_packs, plan_questions
 from server.agent.scoring import scoring_llm
+from server import billing
 from server.auth import verify_token
 from server.config import get_settings
 from server.share import ShareChoices, initials, public_card, validate
@@ -124,7 +125,7 @@ async def create_session(body: NewSession, uid: str = Depends(_user), db: AsyncS
             interview_type=body.interview_type, cv_id=body.cv_id, jd_text=jd_text,
         )
     except repo.NoCredits as e:
-        raise HTTPException(402, "You've used your free mocks. Paid plans are coming soon.") from e
+        raise HTTPException(402, "You've used your mocks. Pick a plan to keep practising.") from e
     except ValueError as e:
         raise HTTPException(422, str(e)) from e
     return {"id": str(row.id)}
@@ -235,3 +236,41 @@ async def local_file(key: str, exp: int, sig: str):
     if not path.is_file():
         raise HTTPException(404, "not found")
     return FileResponse(path)
+
+
+@router.get("/billing/products")
+async def products():
+    return [{"id": p.id, "label": p.label, "price": p.price_label} for p in billing.PRODUCTS.values()]
+
+
+class CheckoutRequest(BaseModel):
+    product: str
+
+
+@router.post("/billing/checkout")
+async def checkout(body: CheckoutRequest, uid: str = Depends(_user)):
+    product = billing.PRODUCTS.get(body.product)
+    if not product:
+        raise HTTPException(422, "unknown product")
+    try:
+        return {"url": await billing.create_checkout(get_settings(), uid, product)}
+    except billing.BillingError as e:
+        logger.error("checkout unavailable: %s", e)
+        raise HTTPException(503, "Payments aren't available right now. Try again later.") from e
+
+
+@router.post("/billing/webhook")
+async def webhook(request: Request, db: AsyncSession = Depends(get_db)):
+    """Stripe -> us. Signature checked on the raw body; 2xx tells Stripe to stop retrying."""
+    try:
+        purchase = billing.parse_webhook(get_settings(), await request.body(), request.headers.get("stripe-signature", ""))
+    except ValueError as e:
+        raise HTTPException(400, "invalid webhook") from e
+    if purchase:
+        granted = await repo.grant(
+            db, purchase.user_id, product=purchase.product.id, credits=purchase.product.credits,
+            pass_days=purchase.product.pass_days, event_id=purchase.event_id, session_id=purchase.session_id,
+            amount_total=purchase.amount_total, currency=purchase.currency,
+        )
+        logger.info("payment %s for %s: %s", purchase.session_id, purchase.user_id, "granted" if granted else "duplicate")
+    return {"ok": True}

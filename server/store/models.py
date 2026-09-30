@@ -81,3 +81,20 @@ class InterviewSession(SoftDelete, Base):
         sa.CheckConstraint(f"status in {SESSION_STATUSES}", name="valid_status"),
         sa.Index("ix_sessions_user_created", "user_id", "created_at"),
     )
+
+
+class Payment(Base):
+    """One completed purchase. The unique ids make grants idempotent: Stripe retries webhooks, and a
+    delayed payment method can report the same checkout twice (completed, then async_payment_succeeded)."""
+
+    __tablename__ = "payments"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[str] = mapped_column(sa.String(64), index=True)
+    provider: Mapped[str] = mapped_column(sa.String(16), default="stripe")
+    event_id: Mapped[str] = mapped_column(sa.String(255), unique=True)
+    session_id: Mapped[str] = mapped_column(sa.String(255), unique=True)  # the checkout; one grant per checkout
+    product: Mapped[str] = mapped_column(sa.String(32))
+    amount_total: Mapped[int | None]  # smallest currency unit, e.g. cents
+    currency: Mapped[str | None] = mapped_column(sa.String(8))
+    created_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), default=_now)

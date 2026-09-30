@@ -3,6 +3,9 @@ Run: python -m tests.test_store
 """
 
 import asyncio
+import hashlib
+import hmac
+import json
 import tempfile
 import time
 import uuid
@@ -215,6 +218,67 @@ def test_share():
     print("share PASS")
 
 
+def test_billing():
+    from server import billing
+    from server.config import get_settings
+
+    asyncio.run(fresh_db("billing.db"))
+    settings = get_settings()
+    settings.stripe_webhook_secret = "whsec_test"
+    app = FastAPI()
+    app.include_router(api.router)
+    app.dependency_overrides[api._user] = lambda authorization=Header(""): authorization.removeprefix("Bearer ") or "anon"
+    client = TestClient(app)
+
+    def hook(event_id, product="credits_5", session="cs_1", type_="checkout.session.completed", paid="paid", secret="whsec_test"):
+        body = json.dumps({"id": event_id, "type": type_, "data": {"object": {
+            "id": session, "payment_status": paid, "client_reference_id": "alice", "amount_total": 900, "currency": "usd",
+            "metadata": {"user_id": "alice", "product": product},
+        }}}).encode()
+        t = int(time.time())
+        sig = hmac.new(secret.encode(), f"{t}.".encode() + body, hashlib.sha256).hexdigest()
+        return client.post("/billing/webhook", content=body, headers={"stripe-signature": f"t={t},v1={sig}"})
+
+    me = lambda: client.get("/me", headers={"Authorization": "Bearer alice"}).json()  # noqa: E731
+    assert me()["credits"] == 2
+    assert hook("evt_1").status_code == 200 and me()["credits"] == 7, "5 credits granted"
+    assert hook("evt_1").status_code == 200 and me()["credits"] == 7, "resent event: no double grant"
+    hook("evt_2", type_="checkout.session.async_payment_succeeded")  # same checkout, second event type
+    assert me()["credits"] == 7, "one grant per checkout"
+    assert hook("evt_3", secret="whsec_forged", session="cs_2").status_code == 400, "forged signature"
+    hook("evt_4", session="cs_3", paid="unpaid")
+    hook("evt_5", session="cs_4", type_="invoice.paid")
+    assert me()["credits"] == 7, "unpaid and unrelated events grant nothing"
+
+    hook("evt_6", product="pass_30", session="cs_5")
+    hook("evt_7", product="pass_30", session="cs_6")
+
+    async def pass_days():  # own engine: the app's pooled connections belong to the TestClient's loop
+        engine = make_engine(f"sqlite+aiosqlite:///{TMP / 'billing.db'}")
+        async with engine.connect() as conn:
+            until = (await conn.execute(Profile.__table__.select().where(Profile.user_id == "alice"))).one().pass_until
+        await engine.dispose()
+        return (repo._aware(until) - datetime.now(UTC)).days
+
+    assert me()["has_pass"] and 59 <= asyncio.run(pass_days()) <= 60, "two passes stack to ~60 days"
+
+    calls = []
+
+    async def fake_checkout(_settings, uid, product):
+        calls.append((uid, product.id))
+        return "https://checkout.stripe.test/x"
+
+    billing.create_checkout, real = fake_checkout, billing.create_checkout
+    try:
+        assert client.post("/billing/checkout", json={"product": "nope"}, headers={"Authorization": "Bearer alice"}).status_code == 422
+        r = client.post("/billing/checkout", json={"product": "pass_30"}, headers={"Authorization": "Bearer alice"})
+        assert r.json() == {"url": "https://checkout.stripe.test/x"} and calls == [("alice", "pass_30")]
+    finally:
+        billing.create_checkout = real
+    assert [p["id"] for p in client.get("/billing/products").json()] == ["credits_5", "pass_30"]
+    print("billing PASS")
+
+
 async def main():
     await test_credits()
     await test_local_store()
@@ -224,3 +288,4 @@ if __name__ == "__main__":
     asyncio.run(main())
     test_api()
     test_share()
+    test_billing()

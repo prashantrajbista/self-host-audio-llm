@@ -3,13 +3,13 @@ this is the access control (there is no row-level security), so keep new queries
 
 import secrets
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from server.store.models import Cv, InterviewSession, Profile
+from server.store.models import Cv, InterviewSession, Payment, Profile
 
 
 class NoCredits(Exception):
@@ -191,6 +191,30 @@ async def get_shared(db: AsyncSession, slug: str) -> InterviewSession | None:
         InterviewSession.status == "scored",
         InterviewSession.deleted_at.is_(None),
     ))
+
+
+async def grant(
+    db: AsyncSession, uid: str, *, product: str, credits: int = 0, pass_days: int = 0, event_id: str, session_id: str,
+    amount_total: int | None = None, currency: str | None = None,
+) -> bool:
+    """Record a purchase and give what it bought, in one transaction. False = this event or checkout was
+    already processed (nothing granted twice)."""
+    await profile(db, uid)  # buyer may not have used the app since signing up
+    db.add(Payment(
+        user_id=uid, event_id=event_id, session_id=session_id, product=product, amount_total=amount_total, currency=currency,
+    ))
+    try:
+        await db.flush()
+    except IntegrityError:
+        await db.rollback()
+        return False
+    p = await db.get(Profile, uid)
+    p.credits += credits
+    if pass_days:
+        # stack on any pass time left
+        p.pass_until = max(_now(), _aware(p.pass_until) or _now()) + timedelta(days=pass_days)
+    await db.commit()
+    return True
 
 
 async def update_session(db: AsyncSession, session_id: uuid.UUID, **fields) -> None:
