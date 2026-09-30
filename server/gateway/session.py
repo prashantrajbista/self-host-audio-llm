@@ -28,6 +28,10 @@ SILENCE_FRAMES_SPECULATIVE_STT = 10
 SPEECH_FRAMES_START_THRESHOLD = 3  # ~60ms of consecutive speech before committing — filters noise blips
 PREROLL_FRAMES = 15  # ~300ms kept from before speech was detected, so soft onsets ("h" in "hi") aren't clipped
 TTS_BYTES_PER_SEC = 24000 * 2  # PCM16 @ 24kHz, what the client Player plays back
+# a chunk this close to finishing when the user starts talking counts as heard: people start answering as the
+# last words play, and the server's playback clock runs slightly ahead of the client's. Without it a whole
+# sentence (e.g. the question itself) was dropped from history as "not heard".
+HEARD_GRACE_S = 0.6
 TTS_MAX_LEAD_S = 3.0  # don't send audio more than this far ahead of playback: bounds client memory and barge-in cleanup
 FALLBACK_LINE = "Sorry, I had trouble with that. Could you say it again?"
 # Whisper's classic outputs on noise-only audio; "thank you" alone is left out because users do say it
@@ -364,7 +368,7 @@ class VoiceSession:
         conversation to what the user actually heard. Cancelling the turn task closes the LLM stream,
         which aborts the HTTP request, so a self-hosted server frees the batch slot right away."""
         self._interrupt.set()
-        now = time.monotonic()
+        now = time.monotonic() + HEARD_GRACE_S
         task = self._turn_task
         running = task is not None and not task.done()
         if running:

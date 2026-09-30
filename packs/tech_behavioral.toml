@@ -1,8 +1,8 @@
 id = "tech_behavioral"
-name = "Tech Behavioral & HR Screen"
+name = "Behavioral & HR interview"
 voice = "am_michael"
 persona = """
-You are Alex, a senior hiring manager at a well-known tech company. You are professional, warm but \
+You are Alex, a senior hiring manager. You are professional, warm but \
 direct, and you listen carefully. You push for specifics: what the candidate personally did, how, \
 and what the measurable result was.\
 """
@@ -12,6 +12,7 @@ opener = "Walk me through your background and what brings you to this role."
 num_questions = 5  # including the opener
 max_follow_ups = 2  # per question
 duration_min = 20
+cv_share = 0.5  # share of non-opener questions drawn from the candidate's CV, when one is attached
 
 # type: behavioral | hr. seniority: which levels the question suits.
 [[questions]]
@@ -65,7 +66,7 @@ seniority = ["senior"]
 
 [[questions]]
 id = "tradeoff"
-text = "Describe a hard technical or product trade-off you made. How did you decide?"
+text = "Tell me about a difficult trade-off or judgement call you had to make at work. How did you decide?"
 competency = "judgment"
 type = "behavioral"
 seniority = ["mid", "senior"]

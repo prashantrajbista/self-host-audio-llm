@@ -37,6 +37,20 @@ cp .env.example .env
 # ollama pull llama3.2   # or whichever LLM_MODEL is set in .env
 ```
 
+## Interview coach (accounts, CVs, scoring)
+
+```bash
+uv run alembic upgrade head          # create/upgrade the database (SQLite at data/app.db by default)
+uv run python -m tests.test_interview
+uv run python -m tests.test_store
+```
+
+- `DATABASE_URL`: `sqlite+aiosqlite:///data/app.db` locally, `postgresql+asyncpg://...` in production. Schema changes: edit `server/store/models.py`, then `uv run alembic revision --autogenerate -m "..."` and review the file.
+- Auth: Supabase Auth (`SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`); the client needs the same two as `NEXT_PUBLIC_*` in `client/.env.local`.
+- Files: `STORAGE_BACKEND=local` (disk, `data/blobs`) or `supabase` (private bucket `STORAGE_BUCKET`, needs `SUPABASE_SERVICE_ROLE_KEY`).
+- Scoring model: `SCORING_ENDPOINT` / `SCORING_MODEL` / `SCORING_API_KEY` (defaults to the conversation LLM).
+- Flow: `/login` → `/new` → `/interview/<id>` → `/history`.
+
 ## Run the Phase 1 check
 
 ```bash
