@@ -98,3 +98,18 @@ class Payment(Base):
     amount_total: Mapped[int | None]  # smallest currency unit, e.g. cents
     currency: Mapped[str | None] = mapped_column(sa.String(8))
     created_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), default=_now)
+
+
+class ContactMessage(Base):
+    """Messages from the contact form. Read them straight from the database (no inbox yet)."""
+
+    __tablename__ = "contact_messages"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(sa.String(100))
+    email: Mapped[str] = mapped_column(sa.String(254))
+    topic: Mapped[str] = mapped_column(sa.String(32))
+    message: Mapped[str] = mapped_column(sa.Text)
+    user_id: Mapped[str | None] = mapped_column(sa.String(64), index=True)  # set when sent while signed in
+    handled: Mapped[bool] = mapped_column(default=False)
+    created_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), default=_now, index=True)

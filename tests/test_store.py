@@ -20,7 +20,7 @@ from server.gateway import api
 from server.storage import LocalStore
 from server.store import repo
 from server.store.db import make_engine, sessions, use_engine
-from server.store.models import Base, Cv, InterviewSession, Profile
+from server.store.models import Base, ContactMessage, Cv, InterviewSession, Profile
 
 TMP = Path(tempfile.mkdtemp())
 
@@ -341,8 +341,75 @@ def test_paddle():
     print("billing (paddle) PASS")
 
 
+async def test_purge():
+    from server.purge import RETENTION_DAYS, purge
+
+    engine = await fresh_db("purge.db")
+    store = LocalStore(str(TMP / "purge-blobs"), "secret", "http://gw")
+    old = datetime.now(UTC) - timedelta(days=RETENTION_DAYS + 1)
+    recent = datetime.now(UTC) - timedelta(days=1)
+    async with sessions()() as db:
+        for key in ("cvs/u/gone.pdf", "cvs/u/kept.pdf", "recordings/u/a.webm", "recordings/u/b.webm", "recordings/u/c.webm"):
+            await store.put(key, b"x", "application/octet-stream")
+        gone_cv = await repo.add_cv(db, "u", file_name="gone.pdf", storage_key="cvs/u/gone.pdf", raw_text="x")
+        kept_cv = await repo.add_cv(db, "u", file_name="kept.pdf", storage_key="cvs/u/kept.pdf", raw_text="x")
+        a = await repo.create_session(db, "u", **new_session_fields(cv_id=gone_cv.id))  # deleted long ago
+        b = await repo.create_session(db, "u", **new_session_fields())  # kept, but its recording is old
+        c = await repo.create_session(db, "u", **new_session_fields())  # recent: untouched
+        ids = (a.id, b.id, c.id)
+        await repo.update_session(db, a.id, recording_key="recordings/u/a.webm", deleted_at=old)
+        await repo.update_session(db, b.id, recording_key="recordings/u/b.webm", created_at=old)
+        await repo.update_session(db, c.id, recording_key="recordings/u/c.webm", created_at=recent)
+        gone_cv.deleted_at, kept_cv.deleted_at = old, recent  # kept_cv: deleted, but inside the window
+        await db.commit()
+
+        counts = await purge(db, store)
+        assert counts == {"sessions": 1, "cvs": 1, "recordings": 1}, counts
+        assert await db.get(InterviewSession, ids[0], populate_existing=True) is None
+        b_row = await db.get(InterviewSession, ids[1], populate_existing=True)
+        assert b_row is not None and b_row.recording_key is None, "old recording removed, interview kept"
+        assert (await db.get(InterviewSession, ids[2], populate_existing=True)).recording_key, "recent recording kept"
+        assert not store.path("recordings/u/a.webm").exists() and not store.path("recordings/u/b.webm").exists()
+        assert store.path("recordings/u/c.webm").exists() and store.path("cvs/u/kept.pdf").exists()
+        assert not store.path("cvs/u/gone.pdf").exists()
+        assert await purge(db, store) == {"sessions": 0, "cvs": 0, "recordings": 0}, "idempotent"
+    await engine.dispose()
+    print("purge PASS")
+
+
+def test_contact():
+    asyncio.run(fresh_db("contact.db"))
+    api._contact_times.clear()
+    app = FastAPI()
+    app.include_router(api.router)
+    client = TestClient(app)
+    ok = {"name": "Asha", "email": "asha@example.com", "topic": "problem", "message": "The mic check never turns green."}
+
+    assert client.post("/contact", json=ok).json() == {"ok": True}
+    assert client.post("/contact", json=ok | {"email": "not-an-email"}).status_code == 422
+    assert client.post("/contact", json=ok | {"message": "hi"}).status_code == 422, "too short"
+    assert client.post("/contact", json=ok | {"topic": "spam"}).status_code == 422
+    assert client.post("/contact", json=ok | {"website": "http://spam"}).json() == {"ok": True}, "bot gets a fake ok"
+
+    async def stored():  # own engine: the app's pooled connections belong to the TestClient's loop
+        engine = make_engine(f"sqlite+aiosqlite:///{TMP / 'contact.db'}")
+        async with engine.connect() as conn:
+            rows = (await conn.execute(ContactMessage.__table__.select())).all()
+        await engine.dispose()
+        return rows
+
+    rows = asyncio.run(stored())
+    assert len(rows) == 1 and rows[0].email == "asha@example.com" and rows[0].user_id is None, "only the real message"
+    for _ in range(3):
+        client.post("/contact", json=ok)
+    assert client.post("/contact", json=ok).status_code == 200  # 5th in the hour
+    assert client.post("/contact", json=ok).status_code == 429, "rate limited"
+    print("contact PASS")
+
+
 async def main():
     await test_credits()
+    await test_purge()
     await test_local_store()
 
 
@@ -352,3 +419,4 @@ if __name__ == "__main__":
     test_share()
     test_billing()
     test_paddle()
+    test_contact()

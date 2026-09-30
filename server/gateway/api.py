@@ -4,7 +4,9 @@ Every route touching user data resolves the caller from their access token (`_us
 server.store.repo, whose queries are all scoped to that user id."""
 
 import logging
+import time
 import uuid
+from collections import defaultdict, deque
 from pathlib import PurePath
 from typing import Literal
 
@@ -273,4 +275,36 @@ async def webhook(request: Request, db: AsyncSession = Depends(get_db)):
             amount_total=purchase.amount_total, currency=purchase.currency, provider=purchase.provider,
         )
         logger.info("payment %s for %s: %s", purchase.session_id, purchase.user_id, "granted" if granted else "duplicate")
+    return {"ok": True}
+
+
+CONTACT_LIMIT, CONTACT_WINDOW_S = 5, 3600  # messages per client IP per hour
+_contact_times: dict[str, deque] = defaultdict(deque)
+
+
+class ContactForm(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    email: str = Field(max_length=254, pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+    topic: Literal["question", "problem", "payment", "privacy", "other"] = "question"
+    message: str = Field(min_length=10, max_length=5000)
+    website: str = ""  # honeypot: hidden from people, filled in by bots
+
+
+@router.post("/contact")
+async def contact(body: ContactForm, request: Request, authorization: str = Header(""), db: AsyncSession = Depends(get_db)):
+    """Public contact form -> contact_messages table. Signed-in senders are linked to their account."""
+    if body.website:
+        return {"ok": True}  # a bot: pretend it worked, store nothing
+    # ponytail: in-memory per-IP limit, per gateway process; move to Redis/DB if several processes serve the API
+    ip = request.client.host if request.client else "unknown"
+    times, now = _contact_times[ip], time.monotonic()
+    while times and now - times[0] > CONTACT_WINDOW_S:
+        times.popleft()
+    if len(times) >= CONTACT_LIMIT:
+        raise HTTPException(429, "Too many messages. Please try again later, or email us.")
+    times.append(now)
+    uid = await verify_token(get_settings(), authorization.removeprefix("Bearer ").strip()) if authorization else None
+    await repo.add_contact_message(
+        db, name=body.name.strip(), email=body.email.strip(), topic=body.topic, message=body.message.strip(), user_id=uid,
+    )
     return {"ok": True}

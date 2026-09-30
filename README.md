@@ -50,6 +50,8 @@ uv run python -m tests.test_store
 - Files: `STORAGE_BACKEND=local` (disk, `data/blobs`) or `supabase` (private bucket `STORAGE_BUCKET`, needs `SUPABASE_SERVICE_ROLE_KEY`).
 - Scoring model: `SCORING_ENDPOINT` / `SCORING_MODEL` / `SCORING_API_KEY` (defaults to the conversation LLM).
 - Flow: `/login` → `/new` → `/interview/<id>` → `/history`.
+- Retention: run `uv run python -m server.purge` daily (cron). It permanently removes items deleted over 30 days ago and recordings older than 30 days, as the privacy policy states.
+- Legal pages (`/terms`, `/privacy`, `/refunds`, `/contact`) read their facts from `client/lib/site.ts`; they are templates to have reviewed before launch.
 
 ## Run the Phase 1 check
 

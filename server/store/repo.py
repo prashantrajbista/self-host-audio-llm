@@ -9,7 +9,7 @@ from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from server.store.models import Cv, InterviewSession, Payment, Profile
+from server.store.models import ContactMessage, Cv, InterviewSession, Payment, Profile
 
 
 class NoCredits(Exception):
@@ -215,6 +215,11 @@ async def grant(
         p.pass_until = max(_now(), _aware(p.pass_until) or _now()) + timedelta(days=pass_days)
     await db.commit()
     return True
+
+
+async def add_contact_message(db: AsyncSession, **fields) -> None:
+    db.add(ContactMessage(**fields))
+    await db.commit()
 
 
 async def update_session(db: AsyncSession, session_id: uuid.UUID, **fields) -> None:
