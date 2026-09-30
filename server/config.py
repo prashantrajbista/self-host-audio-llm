@@ -1,4 +1,7 @@
+import secrets
 from functools import lru_cache
+
+from pydantic import Field
 from pydantic_settings import BaseSettings
 
 
@@ -19,12 +22,24 @@ class Settings(BaseSettings):
     llm_fallback_model: str = ""
     llm_fallback_api_key: str = ""
     agent: str = "assistant"  # default agent definition (server/agent/agents.py), per-session ?agent= overrides
-    packs_dir: str = "packs"  # interview packs (packs/*.toml); a session with ?pack= runs a mock interview
-    interviews_dir: str = "data/interviews"  # finished interview records (local JSON until Supabase)
+    packs_dir: str = "packs"  # interview packs (packs/*.toml)
+    # sqlite+aiosqlite:///path locally; postgresql+asyncpg://... in production. Schema: `uv run alembic upgrade head`
+    database_url: str = "sqlite+aiosqlite:///data/app.db"
     # interview grading model (any OpenAI-compatible API); empty fields reuse the LLM_* settings
     scoring_endpoint: str = ""
     scoring_model: str = ""
     scoring_api_key: str = ""
+    # auth: Supabase Auth verifies users' access tokens (URL + publishable key)
+    supabase_url: str = ""
+    supabase_publishable_key: str = ""
+    supabase_service_role_key: str = ""  # server only, full access: needed for STORAGE_BACKEND=supabase
+    # file storage (CVs, recordings): "supabase" (private bucket) or "local" (disk, for development)
+    storage_backend: str = "local"
+    storage_bucket: str = "interview-coach"
+    local_storage_dir: str = "data/blobs"
+    files_secret: str = Field(default_factory=lambda: secrets.token_hex(32))  # signs local file URLs
+    public_base_url: str = "http://localhost:8000"  # this gateway as browsers reach it (local file URLs)
+    cors_origins: list[str] = ["http://localhost:3000"]  # web client origins allowed to call the HTTP API
     whisper_model: str = "small.en"
     tts_voice: str = "af_heart"  # default voice
     tts_speed: float = 1.15  # Kokoro speaking rate multiplier, 1.0 = normal
