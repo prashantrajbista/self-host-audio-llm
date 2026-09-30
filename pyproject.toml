@@ -25,6 +25,7 @@ dependencies = [
     "asyncpg>=0.31.0",
     "stripe>=15.6.1",
     "azure-storage-blob[aio]>=12.30.3",
+    "kokoro-onnx>=0.6.1",
 ]
 
 [tool.uv]

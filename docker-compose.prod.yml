@@ -46,6 +46,8 @@ services:
     build:
       <<: *python-build
       target: gateway
+    environment:
+      OMP_NUM_THREADS: 1
     deploy:
       replicas: ${GATEWAY_REPLICAS:-1}
     healthcheck:
@@ -64,6 +66,11 @@ services:
     build:
       <<: *python-build
       target: stt
+    # 4 vCPUs (2 physical cores): STT and TTS get 2 threads each instead of fighting over all of them
+    environment:
+      WHISPER_MODEL: base.en
+      STT_WORKERS: 1
+      STT_CPU_THREADS: 2
     volumes:
       - hf_cache:/root/.cache/huggingface
     healthcheck:
@@ -75,6 +82,11 @@ services:
     build:
       <<: *python-build
       target: tts
+    environment:
+      TTS_ENGINE: onnx
+      TTS_WORKERS: 1
+      TTS_ONNX_THREADS: 2
+      OMP_NUM_THREADS: 2
     volumes:
       - hf_cache:/root/.cache/huggingface
     healthcheck:

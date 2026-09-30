@@ -60,6 +60,11 @@ class Settings(BaseSettings):
     tts_speed: float = 1.15  # Kokoro speaking rate multiplier, 1.0 = normal
     # voices a client may pick per session (Kokoro American-English pipeline, lang_code "a")
     tts_voices: list[str] = ["af_heart", "af_bella", "am_michael", "am_fenrir"]
+    # "torch" (kokoro package, CPU or GPU) or "onnx" (kokoro-onnx int8, CPU only, much faster there)
+    tts_engine: str = "torch"
+    tts_onnx_model: str = "models/kokoro-v1.0.int8.onnx"  # from the kokoro-onnx model-files-v1.0 release
+    tts_onnx_voices: str = "models/voices-v1.0.bin"
+    tts_onnx_threads: int = 0  # ONNX Runtime threads per sentence; 0 = all cores
 
     # parallelism of the shared models: each worker is one more utterance/sentence in flight at once
     stt_workers: int = 2  # faster-whisper num_workers

@@ -65,20 +65,38 @@ def get_llm(settings: Settings) -> LLMAdapter:
     return _llm_cache[key]
 
 
+def build_kokoro(settings: Settings, device: str) -> TTSAdapter:
+    """Kokoro on the engine TTS_ENGINE picks: "onnx" (CPU, int8) or "torch" (CPU or GPU)."""
+    if settings.tts_engine == "onnx":
+        from server.adapters.tts.kokoro_onnx_adapter import KokoroOnnxAdapter
+
+        return KokoroOnnxAdapter(
+            model_path=settings.tts_onnx_model,
+            voices_path=settings.tts_onnx_voices,
+            voice=settings.tts_voice,
+            speed=settings.tts_speed,
+            workers=settings.tts_workers,
+            threads=settings.tts_onnx_threads,
+        )
+    from server.adapters.tts.kokoro_adapter import KokoroAdapter
+
+    return KokoroAdapter(
+        voice=settings.tts_voice,
+        device=device,
+        voices=tuple(settings.tts_voices),
+        speed=settings.tts_speed,
+        workers=settings.tts_workers,
+    )
+
+
 def get_tts(settings: Settings) -> TTSAdapter:
     if settings.tts_backend == "kokoro":
-        voices = tuple(settings.tts_voices)
-        key = ("kokoro", settings.tts_voice, voices, settings.device, settings.tts_speed, settings.tts_workers)
+        key = (
+            "kokoro", settings.tts_engine, settings.tts_voice, tuple(settings.tts_voices), settings.device,
+            settings.tts_speed, settings.tts_workers,
+        )
         if key not in _tts_cache:
-            from server.adapters.tts.kokoro_adapter import KokoroAdapter
-
-            _tts_cache[key] = KokoroAdapter(
-                voice=settings.tts_voice,
-                device=settings.device,
-                voices=voices,
-                speed=settings.tts_speed,
-                workers=settings.tts_workers,
-            )
+            _tts_cache[key] = build_kokoro(settings, settings.device)
         return _tts_cache[key]
     if settings.tts_backend == "remote":
         key = ("remote", settings.tts_endpoint)

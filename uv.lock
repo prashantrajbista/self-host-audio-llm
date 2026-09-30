@@ -1481,6 +1481,22 @@ wheels = [
 ]
 
 [[package]]
+name = "kokoro-onnx"
+version = "0.6.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "espeakng-loader" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
+    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
+    { name = "onnxruntime" },
+    { name = "phonemizer" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/6b/ef/b58dedba0a1417f16352352787fbcfcbaa0b907e284c2ea3ebaf5541109a/kokoro_onnx-0.6.1.tar.gz", hash = "sha256:7bbdb66dd53775f71088a99999a9aefdad240740daf54cb09410d8bb1e294e35", size = 69799, upload-time = "2026-08-19T00:40:37.021Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/60/e1/a27e5a70a525a5ee1fd5357596f07b724d02ff317f134e86cb6e3d9db968/kokoro_onnx-0.6.1-py3-none-any.whl", hash = "sha256:50c8de4950d601df41428ee5462a48c8a78bef441bf671f2492e070ef44d8a32", size = 26084, upload-time = "2026-08-19T00:40:35.746Z" },
+]
+
+[[package]]
 name = "language-tags"
 version = "1.3.1"
 source = { registry = "https://pypi.org/simple" }
@@ -2413,6 +2429,21 @@ wheels = [
 ]
 
 [[package]]
+name = "phonemizer"
+version = "3.4.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "attrs" },
+    { name = "dlinfo" },
+    { name = "joblib" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/bc/7d/5a96ddb130552f6365a090b5fd12ace803a95a858e3f67258f2ad13dc51f/phonemizer-3.4.0.tar.gz", hash = "sha256:e13231980c50bc671ec0466379ba027260ad9d61929952d8ae9665b3d0f251eb", size = 93535, upload-time = "2026-07-31T15:53:17.329Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/37/41/09bafd0ccf4f4ddd1530c9f9d10e75a24056e10e120b9daa97f691fcabc3/phonemizer-3.4.0-py3-none-any.whl", hash = "sha256:5ff1215d0efa3606dd1b92449f6d71b5c1741efcc84c6d40c17bfaf64f6ded5f", size = 108529, upload-time = "2026-07-31T15:53:16.056Z" },
+]
+
+[[package]]
 name = "phonemizer-fork"
 version = "3.3.2"
 source = { registry = "https://pypi.org/simple" }
@@ -3244,6 +3275,7 @@ dependencies = [
     { name = "faster-whisper" },
     { name = "httpx" },
     { name = "kokoro" },
+    { name = "kokoro-onnx" },
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "nvidia-cublas-cu12", marker = "sys_platform == 'linux'" },
@@ -3271,6 +3303,7 @@ requires-dist = [
     { name = "faster-whisper" },
     { name = "httpx" },
     { name = "kokoro" },
+    { name = "kokoro-onnx", specifier = ">=0.6.1" },
     { name = "numpy" },
     { name = "nvidia-cublas-cu12", marker = "sys_platform == 'linux'" },
     { name = "nvidia-cudnn-cu12", marker = "sys_platform == 'linux'" },

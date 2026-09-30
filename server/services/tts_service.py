@@ -5,8 +5,8 @@ from fastapi import FastAPI
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from server.adapters.tts.kokoro_adapter import KokoroAdapter
 from server.config import get_settings, resolve_voice
+from server.gateway.factory import build_kokoro
 from server.logging_config import setup_logging
 
 settings = get_settings()
@@ -16,14 +16,11 @@ logger = logging.getLogger(__name__)
 app = FastAPI()
 # DEVICE was previously ignored here, so the GPU compose override still synthesized on CPU
 _device = settings.device if settings.device in ("cpu", "cuda") else "cpu"
-_adapter = KokoroAdapter(
-    voice=settings.tts_voice,
-    device=_device,
-    voices=tuple(settings.tts_voices),
-    speed=settings.tts_speed,
-    workers=settings.tts_workers,
+_adapter = build_kokoro(settings, _device)
+logger.info(
+    "TTS service ready: engine=%s voice=%s device=%s workers=%d",
+    settings.tts_engine, settings.tts_voice, _device, settings.tts_workers,
 )
-logger.info("TTS service ready: voice=%s device=%s workers=%d", settings.tts_voice, _device, settings.tts_workers)
 
 
 class SynthesizeRequest(BaseModel):
