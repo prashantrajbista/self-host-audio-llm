@@ -28,8 +28,8 @@ const COPY: Record<ErrorKind, { title: string; body: string; action: string }> =
   },
   "no-credits": {
     title: "You're out of mocks",
-    body: "You've used your free mocks. Paid plans are coming soon.",
-    action: "Back",
+    body: "You've used your mocks. Get more to keep practising.",
+    action: "Get more mocks",
   },
   dropped: {
     title: "Connection lost",

@@ -81,7 +81,9 @@ export default function InterviewCall() {
         {call.error ? (
           <ErrorNotice
             kind={call.error}
-            onAction={() => window.location.assign(call.error === "dropped" ? "/history" : "/new")}
+            onAction={() =>
+              window.location.assign(call.error === "dropped" ? "/history" : call.error === "no-credits" ? "/new?buy=1" : "/new")
+            }
           />
         ) : (
           <div className={`${CARD} text-center`}>

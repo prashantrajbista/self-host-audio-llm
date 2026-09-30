@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { gatewayFetch, supabase, useRequireAuth, type Cv, type Profile } from "@/lib/supabase";
+import { BuyPanel } from "@/components/BuyPanel";
+import { GatewayError, gatewayFetch, supabase, useRequireAuth, type Cv, type Profile } from "@/lib/supabase";
 import { CARD, INPUT, LABEL, PAGE, PRIMARY, SECONDARY } from "@/lib/ui";
 
 // Level of the job applied for (sets the bar for questions and grading), not the candidate's experience.
@@ -26,6 +27,8 @@ export default function NewInterview() {
   const session = useRequireAuth();
   const [packs, setPacks] = useState<{ id: string; name: string }[]>([]);
   const [credits, setCredits] = useState<Profile | null>(null);
+  const [buy, setBuy] = useState<{ open: boolean; reason?: string }>({ open: false });
+  const [paidNotice, setPaidNotice] = useState<string | null>(null);
   const [cvs, setCvs] = useState<Cv[]>([]);
   const [packId, setPackId] = useState("");
   const [role, setRole] = useState("Software Engineer");
@@ -46,11 +49,33 @@ export default function NewInterview() {
         setPackId((cur) => cur || p[0]?.id || "");
       })
       .catch(() => setError("Can't reach the interview server. Is the gateway running?"));
-    gatewayFetch<Profile>("/me").then(setCredits, () => {});
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("buy")) setBuy({ open: true, reason: "You've used your mocks. Pick a plan to keep practising." });
+    // Back from Stripe: the webhook grants the purchase, usually within seconds; watch /me until it shows.
+    let timer: ReturnType<typeof setTimeout>;
+    const watchForPayment = async (before: Profile, tries: number) => {
+      const now = await gatewayFetch<Profile>("/me").catch(() => before);
+      setCredits(now);
+      if (now.credits !== before.credits || now.has_pass !== before.has_pass) {
+        setPaidNotice("Payment received. Your mocks are ready.");
+      } else if (tries > 0) {
+        timer = setTimeout(() => void watchForPayment(before, tries - 1), 2000);
+      } else {
+        setPaidNotice("Payment received. Your mocks can take a minute to appear; refresh this page shortly.");
+      }
+    };
+    gatewayFetch<Profile>("/me").then((p) => {
+      setCredits(p);
+      if (params.get("paid")) {
+        setPaidNotice("Payment received. Updating your mocks…");
+        timer = setTimeout(() => void watchForPayment(p, 10), 2000);
+      }
+    }, () => {});
     gatewayFetch<Cv[]>("/cvs").then((list) => {
       setCvs(list);
       if (list[0]) setCvId(list[0].id);
     }, () => {});
+    return () => clearTimeout(timer);
   }, [uid]);
 
   // pre-select the level from the chosen CV (the user can still change it)
@@ -66,7 +91,8 @@ export default function NewInterview() {
     try {
       await work();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      if (e instanceof GatewayError && e.status === 402) setBuy({ open: true, reason: e.message });
+      else setError(e instanceof Error ? e.message : String(e));
     } finally {
       setStatus(null);
     }
@@ -133,9 +159,17 @@ export default function NewInterview() {
             </button>
           </span>
         </div>
+        {paidNotice && (
+          <p role="status" className="rounded-[8px] bg-primary/10 px-3 py-2 text-sm text-ink">
+            {paidNotice}
+          </p>
+        )}
         {credits && (
           <p className="text-sm text-ink-secondary">
-            {credits.has_pass ? "Unlimited mocks active." : `${credits.credits} mock${credits.credits === 1 ? "" : "s"} left.`}
+            {credits.has_pass ? "Unlimited mocks active." : `${credits.credits} mock${credits.credits === 1 ? "" : "s"} left.`}{" "}
+            <button type="button" onClick={() => setBuy({ open: true })} className="text-link hover:underline">
+              Buy more
+            </button>
           </p>
         )}
 
@@ -275,6 +309,7 @@ export default function NewInterview() {
           {status ?? "Start interview"}
         </button>
       </form>
+      <BuyPanel open={buy.open} onClose={() => setBuy({ open: false })} reason={buy.reason} />
     </main>
   );
 }

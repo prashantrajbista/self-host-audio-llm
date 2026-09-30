@@ -30,7 +30,16 @@ export function useRequireAuth(): Session | null | undefined {
   return session;
 }
 
-// Gateway HTTP call as the signed-in user. Throws the server's message (shown to the user) on failure.
+export class GatewayError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+  }
+}
+
+// Gateway HTTP call as the signed-in user. Throws GatewayError with the server's message (shown to the user).
 export async function gatewayFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   const { data } = await supabase.auth.getSession();
   const res = await fetch(gatewayHttpUrl(path), {
@@ -38,7 +47,7 @@ export async function gatewayFetch<T>(path: string, init: RequestInit = {}): Pro
     headers: { ...init.headers, Authorization: `Bearer ${data.session?.access_token ?? ""}` },
   });
   const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(typeof body.detail === "string" ? body.detail : "Something went wrong. Try again.");
+  if (!res.ok) throw new GatewayError(typeof body.detail === "string" ? body.detail : "Something went wrong. Try again.", res.status);
   return body as T;
 }
 
