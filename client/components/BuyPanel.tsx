@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Sheet } from "@/components/Sheet";
+import { openPaddleCheckout } from "@/lib/paddle";
 import { gatewayFetch } from "@/lib/supabase";
 import { PRIMARY } from "@/lib/ui";
 
@@ -11,7 +12,8 @@ interface Product {
   price: string;
 }
 
-// Pick a product, then pay on Stripe's hosted page; credits arrive via webhook after returning.
+// Pick a product, then pay in the provider's checkout (Paddle overlay, or Stripe's hosted page).
+// Credits arrive via the provider's webhook; /new?paid=1 waits for them.
 export function BuyPanel({ open, onClose, reason }: { open: boolean; onClose: () => void; reason?: string }) {
   const [products, setProducts] = useState<Product[]>([]);
   const [choice, setChoice] = useState<string>("");
@@ -33,12 +35,18 @@ export function BuyPanel({ open, onClose, reason }: { open: boolean; onClose: ()
     setBusy(true);
     setError(null);
     try {
-      const { url } = await gatewayFetch<{ url: string }>("/billing/checkout", {
+      const checkout = await gatewayFetch<{ provider: string; url?: string; transaction_id?: string }>("/billing/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ product: choice }),
       });
-      window.location.assign(url);
+      if (checkout.transaction_id) {
+        await openPaddleCheckout(checkout.transaction_id, () => window.location.assign("/new?paid=1"));
+        setBusy(false);
+        onClose(); // Paddle's overlay is open now; our sheet would sit on top of it
+      } else if (checkout.url) {
+        window.location.assign(checkout.url);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setBusy(false);
@@ -72,7 +80,7 @@ export function BuyPanel({ open, onClose, reason }: { open: boolean; onClose: ()
         <button onClick={() => void pay()} disabled={busy || !choice} className={`${PRIMARY} w-full`}>
           {busy ? "Opening secure checkout…" : "Continue to payment"}
         </button>
-        <p className="text-xs text-ink-secondary">Payment is handled by Stripe. We never see your card details.</p>
+        <p className="text-xs text-ink-secondary">Payment is handled securely by our payment provider. We never see your card details.</p>
       </div>
     </Sheet>
   );
