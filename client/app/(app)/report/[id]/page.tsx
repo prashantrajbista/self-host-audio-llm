@@ -108,6 +108,7 @@ export default function ReportPage() {
 
   return (
     <main className={`${PAGE} pb-32`}>
+      <title>{`${report.verdict} · ${report.overall_score}/100 · VoiceWire Interview`}</title>
       <div className="mx-auto w-full max-w-2xl space-y-6">
         <header className={WIDE_CARD}>
           <div className="flex items-start justify-between gap-4">

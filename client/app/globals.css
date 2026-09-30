@@ -3,9 +3,9 @@
 @tailwind utilities;
 
 /* Color tokens as RGB channels so Tailwind opacity modifiers (bg-divider/40) keep working.
-   Dark values follow the system setting. */
+   Theme: light by default; <html data-theme="dark"> when the user picks dark (saved in localStorage). */
 :root {
-  color-scheme: light dark;
+  color-scheme: light;
   --bg: 245 245 247;
   --surface: 255 255 255;
   --ink: 29 29 31;
@@ -17,23 +17,80 @@
   --link: 0 122 255;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: 0 0 0;
-    --surface: 28 28 30;
-    --ink: 245 245 247;
-    --ink-secondary: 152 152 157;
-    --divider: 56 56 58;
-    --primary: 0 137 123;
-    --primary-hover: 0 121 107; /* darker on hover: white label keeps contrast */
-    --error: 255 69 58;
-    --link: 10 132 255;
-  }
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: 0 0 0;
+  --surface: 28 28 30;
+  --ink: 245 245 247;
+  --ink-secondary: 152 152 157;
+  --divider: 56 56 58;
+  --primary: 0 137 123;
+  --primary-hover: 0 121 107; /* darker on hover: white label keeps contrast */
+  --error: 255 69 58;
+  --link: 10 132 255;
 }
+
 
 html,
 body {
   height: 100%;
   background-color: rgb(var(--bg));
   color: rgb(var(--ink));
+}
+
+/* Browser-drawn surfaces carry the palette too: selection, caret, native controls, scrollbars, links. */
+::selection {
+  background-color: rgb(var(--primary) / 0.22);
+  color: rgb(var(--ink));
+}
+
+html {
+  caret-color: rgb(var(--primary));
+  accent-color: rgb(var(--primary)); /* checkboxes, radios, range, progress */
+  scrollbar-color: rgb(var(--divider)) transparent;
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  text-underline-offset: 0.2em;
+  text-decoration-thickness: 1px;
+}
+
+:focus-visible {
+  outline-color: rgb(var(--primary));
+}
+
+@layer utilities {
+  /* long-form reading (legal pages): 65-75ch measure, clear heading rhythm */
+  .prose-page {
+    max-width: 68ch;
+    font-size: 1.0625rem;
+    line-height: 1.65;
+  }
+  .prose-page h2 {
+    margin-top: 2.25rem;
+    margin-bottom: 0.5rem;
+    font-size: 1.25rem;
+    font-weight: 600;
+    line-height: 1.3;
+    text-wrap: balance;
+  }
+  .prose-page p,
+  .prose-page ul {
+    margin-top: 0.75rem;
+  }
+  .prose-page ul {
+    list-style: disc;
+    padding-left: 1.25rem;
+  }
+  .prose-page li + li {
+    margin-top: 0.35rem;
+  }
+  .prose-page a {
+    color: rgb(var(--link));
+    text-decoration: underline;
+  }
+  .prose-page strong {
+    font-weight: 600;
+  }
 }

@@ -106,7 +106,8 @@ export function Orb({
     let last = performance.now();
     let raf = 0;
     // live config, eased toward the target state's config each frame
-    const darkQuery = window.matchMedia("(prefers-color-scheme: dark)");
+    // follows the site's light/dark toggle (lib/theme.ts), read per frame so switching applies live
+    const darkQuery = { get matches() { return document.documentElement.dataset.theme === "dark"; } };
     const cfg: OrbConfig = structuredClone(configFor(stateRef.current, paletteRef.current, darkQuery.matches));
 
     const tick = (now: number) => {

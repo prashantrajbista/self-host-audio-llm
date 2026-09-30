@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { Sheet } from "@/components/Sheet";
-import { CARD_SIZES, ShareCard } from "@/components/ShareCard";
+import { ScaledCard } from "@/components/ScaledCard";
 import { LEVEL_LABEL, type Report } from "@/lib/report";
 import { cardTitle, shareUrl, type PublicCard, type ShareChoices } from "@/lib/share";
 import { gatewayFetch } from "@/lib/supabase";
@@ -32,26 +32,6 @@ function previewCard(report: Report, c: ShareChoices, role: string, seniority: s
     top_strength: c.show_strength ? (report.top_strength ?? null) : null,
     quote: c.quote,
   };
-}
-
-// The fixed-size card scaled to whatever width its container has.
-function ScaledCard({ card }: { card: PublicCard }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [scale, setScale] = useState(0.35);
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const observer = new ResizeObserver(([entry]) => setScale(entry.contentRect.width / CARD_SIZES.wide.width));
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, []);
-  return (
-    <div ref={ref} className="relative w-full overflow-hidden rounded-[8px] border border-divider" style={{ aspectRatio: "1200 / 630" }}>
-      <div className="absolute left-0 top-0 origin-top-left" style={{ transform: `scale(${scale})` }}>
-        <ShareCard card={card} layout="wide" />
-      </div>
-    </div>
-  );
 }
 
 export function SharePanel({

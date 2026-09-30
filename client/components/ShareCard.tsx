@@ -55,7 +55,6 @@ export function ShareCard({ card, layout }: { card: PublicCard; layout: keyof ty
 
   const headline = (
     <div style={{ display: "flex", flexDirection: "column", gap: wide ? 10 : 16 }}>
-      <span style={{ fontSize: wide ? 24 : 32, color: C.inkSecondary }}>Mock interview result</span>
       <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
         <span style={{ fontSize: wide ? 150 : 170, fontWeight: 700, color: C.ink, lineHeight: 1 }}>{card.score}</span>
         <span style={{ fontSize: wide ? 44 : 60, color: C.inkSecondary }}>/100</span>
@@ -128,8 +127,9 @@ export function ShareCard({ card, layout }: { card: PublicCard; layout: keyof ty
             fontSize: wide ? 26 : 36,
             fontStyle: "italic",
             color: C.ink,
-            borderLeft: `6px solid ${C.primary}`,
-            paddingLeft: 20,
+            background: C.bg,
+            borderRadius: 16,
+            padding: wide ? "16px 22px" : "22px 30px",
             marginTop: 24,
             flexShrink: 0,
           }}
@@ -151,7 +151,7 @@ export function ShareCard({ card, layout }: { card: PublicCard; layout: keyof ty
           flexShrink: 0,
         }}
       >
-        <span style={{ fontWeight: 700, color: C.primary }}>{card.brand}</span>
+        <span style={{ fontWeight: 700, color: C.primary }}>{`Mock interview · ${card.brand}`}</span>
         <span>{card.date}</span>
       </div>
     </div>

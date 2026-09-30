@@ -1,17 +1,18 @@
 "use client";
 
 import { Fragment, useState } from "react";
+import { AlertIcon, CheckIcon } from "@/components/Icons";
 import { FILLER_RE, SOURCE_LABEL, deliveryMetrics, humanize, type Answer, type Delivery, type Verdict } from "@/lib/report";
 
 // Status is never colour alone: always an icon + a word.
 function StatusTag({ verdict }: { verdict: Verdict }) {
   return verdict === "good" ? (
     <span className="inline-flex items-center gap-1 text-xs font-semibold text-primary">
-      <span aria-hidden>✓</span> On track
+      <CheckIcon size={14} /> On track
     </span>
   ) : (
     <span className="inline-flex items-center gap-1 text-xs font-semibold text-error">
-      <span aria-hidden>!</span> Work on this
+      <AlertIcon size={14} /> Work on this
     </span>
   );
 }
@@ -39,8 +40,16 @@ export function ScoreBars({
             <div className="flex items-baseline justify-between gap-3">
               <span className="font-semibold text-ink">
                 {humanize(name)}
-                {name === strongest && <span className="ml-2 text-xs font-semibold text-primary">✓ Strongest</span>}
-                {name === weakest && <span className="ml-2 text-xs font-semibold text-error">! Focus here</span>}
+                {name === strongest && (
+                  <span className="ml-2 inline-flex items-center gap-1 text-xs font-semibold text-primary">
+                    <CheckIcon size={14} /> Strongest
+                  </span>
+                )}
+                {name === weakest && (
+                  <span className="ml-2 inline-flex items-center gap-1 text-xs font-semibold text-error">
+                    <AlertIcon size={14} /> Focus here
+                  </span>
+                )}
               </span>
               <span className="text-sm text-ink tabular-nums">{value.toFixed(1)} / 5</span>
             </div>

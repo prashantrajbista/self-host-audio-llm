@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { LEVEL_LABEL } from "@/lib/report";
 import { gatewayFetch, useRequireAuth, type InterviewSession } from "@/lib/supabase";
-import { CARD, PAGE, PRIMARY } from "@/lib/ui";
+import { PAGE, PRIMARY, WIDE_CARD } from "@/lib/ui";
 
 const POLL_MS = 5000; // while a report is still being scored
 
@@ -12,8 +12,8 @@ const STATUS: Record<InterviewSession["status"], string> = {
   live: "In progress",
   scoring: "Scoring…",
   scored: "",
-  failed: "Couldn't score, credit refunded",
-  abandoned: "No answers, credit refunded",
+  failed: "Couldn't score · refunded",
+  abandoned: "No answers · refunded",
 };
 
 export default function History() {
@@ -45,14 +45,25 @@ export default function History() {
 
   return (
     <main className={PAGE}>
-      <div className={CARD}>
+      <title>Your interviews · VoiceWire Interview</title>
+      <div className={WIDE_CARD}>
         <div className="flex items-center justify-between gap-4">
           <h1 className="text-2xl font-bold text-ink">Your interviews</h1>
           <a href="/new" className={PRIMARY}>
             New interview
           </a>
         </div>
-        {rows?.length === 0 && <p className="mt-6 text-ink-secondary">No interviews yet.</p>}
+        {rows?.length === 0 && (
+          <div className="mt-8 rounded-[12px] bg-bg px-6 py-10 text-center">
+            <p className="font-semibold text-ink">No interviews yet</p>
+            <p className="mx-auto mt-1 max-w-sm text-sm text-ink-secondary">
+              Your practice interviews and their reports will appear here. The first one takes about 20 minutes.
+            </p>
+            <a href="/new" className={`${PRIMARY} mt-5 inline-block`}>
+              Start your first mock
+            </a>
+          </div>
+        )}
         <ul className="mt-6 divide-y divide-divider">
           {rows?.map((r) => (
             <li key={r.id} className="flex items-center gap-2 py-2">
@@ -72,7 +83,13 @@ export default function History() {
                     <span className="text-sm text-ink-secondary">{r.verdict}</span>
                   </span>
                 ) : (
-                  <span className="text-sm text-ink-secondary text-right">{STATUS[r.status]}</span>
+                  <span
+                    className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+                      r.status === "scoring" || r.status === "live" ? "bg-primary/10 text-primary" : "bg-divider/50 text-ink-secondary"
+                    }`}
+                  >
+                    {STATUS[r.status]}
+                  </span>
                 )}
               </a>
               <button
