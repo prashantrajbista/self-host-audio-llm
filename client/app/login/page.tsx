@@ -22,7 +22,22 @@ export default function Login() {
     if (session) window.location.replace(nextPath());
   }, [session]);
 
-  const redirectTo = () => `${window.location.origin}${nextPath()}`;
+  // A failed Google sign-in comes back here with the reason in the URL (query or hash); show it
+  // instead of silently landing on the sign-in page again.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search + "&" + window.location.hash.replace(/^#/, ""));
+    const reason = params.get("error_description") || params.get("error");
+    if (!reason) return;
+    setError(
+      /database error saving new user/i.test(reason)
+        ? "We couldn't create your account (a server-side sign-up error). Please try again later, or contact us."
+        : reason,
+    );
+    window.history.replaceState(null, "", `/login${nextPath() === "/new" ? "" : `?next=${encodeURIComponent(nextPath())}`}`);
+  }, []);
+
+  // Google returns to this page: it forwards to `next` once the session exists, or shows the error.
+  const redirectTo = () => `${window.location.origin}/login?next=${encodeURIComponent(nextPath())}`;
 
   const google = async () => {
     setBusy(true);
