@@ -43,7 +43,7 @@ export default function Login() {
           {BRAND}
         </a>
         <div className="max-w-md">
-          <h2 className="text-[2.5rem] font-bold leading-[1.08] tracking-[-0.02em] text-ink text-balance">
+          <h2 className="text-[2.125rem] font-bold leading-[1.15] tracking-[-0.02em] text-ink text-balance">
             Rehearse the interview before it counts.
           </h2>
           <ul className="mt-8 space-y-4 text-ink">
@@ -69,7 +69,7 @@ export default function Login() {
         </div>
 
         <div className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center py-10">
-          <h1 className="text-[1.75rem] font-bold leading-tight text-ink">Sign in</h1>
+          <h1 className="text-[2.125rem] font-bold leading-[1.15] text-ink">Sign in</h1>
           <p className="mt-2 text-ink-secondary">
             New here? Signing in creates your account, with {FREE_MOCKS} free mock interviews.
           </p>
