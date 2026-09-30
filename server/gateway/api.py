@@ -29,6 +29,7 @@ router = APIRouter()
 
 CV_TYPES = {".pdf": "application/pdf", ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document", ".txt": "text/plain"}
 MAX_RECORDING_BYTES = 50 * 1024 * 1024  # ~25 min of opus is a few MB; generous headroom
+RECORDING_URL_TTL_S = 3600
 
 
 async def _user(authorization: str = Header("")) -> str:
@@ -49,7 +50,10 @@ def _session_json(s: InterviewSession, full: bool = False) -> dict:
         "verdict": s.verdict, "created_at": s.created_at.isoformat(),
     }
     if full:
-        out |= {"report": s.report, "has_recording": bool(s.recording_key), "jd_text": s.jd_text}
+        out |= {
+            "report": s.report, "has_recording": bool(s.recording_key), "jd_text": s.jd_text,
+            "audio_started_at": (s.record or {}).get("audio_started_at"),
+        }
     return out
 
 
@@ -176,6 +180,15 @@ async def upload_recording(
     await get_storage(get_settings()).put(key, data, content_type)
     await repo.update_session(db, session_id, recording_key=key)
     return {"ok": True}
+
+
+@router.get("/sessions/{session_id}/recording-url")
+async def recording_url(session_id: uuid.UUID, uid: str = Depends(_user), db: AsyncSession = Depends(get_db)):
+    """Short-lived link the browser plays the recording from (storage stays private)."""
+    row = await repo.get_session(db, uid, session_id)
+    if not row or not row.recording_key:
+        raise HTTPException(404, "no recording")
+    return {"url": await get_storage(get_settings()).signed_url(row.recording_key, RECORDING_URL_TTL_S)}
 
 
 @router.get("/files/{key:path}")

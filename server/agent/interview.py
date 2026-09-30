@@ -173,8 +173,9 @@ class Interview:
             voice=self.pack.get("voice"),
         )
 
-    def record(self, turns: list[dict]) -> dict:
-        """Everything scoring (milestone 2) needs: plan, question boundaries, timed turns."""
+    def record(self, turns: list[dict], audio_started_at: float | None = None) -> dict:
+        """Everything scoring and replay need: plan, question boundaries, timed turns. audio_started_at = when
+        the first mic audio arrived, i.e. ~the start of the client's recording (replay seeks relative to it)."""
         return {
             "pack_id": self.pack["id"],
             "role": self.role,
@@ -182,6 +183,7 @@ class Interview:
             "type": self.interview_type,
             "jd_text": self.jd_text,
             "started_at": self.started_at,
+            "audio_started_at": audio_started_at,
             "ended_at": time.time(),
             "completed": self.ended,
             "questions": [

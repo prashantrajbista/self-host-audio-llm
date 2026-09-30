@@ -178,6 +178,7 @@ async def score_interview(record: dict, pack: dict, llm: LLMAdapter) -> dict:
         "type": record["type"],
         "completed": record["completed"],
         "delivery": delivery(record["turns"]),
+        "rubric": [{"name": d["name"], "description": d["description"]} for d in pack["rubric"]],
         "answers": out,
     }
     if not scored:

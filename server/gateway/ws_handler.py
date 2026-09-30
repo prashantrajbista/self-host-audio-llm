@@ -87,6 +87,7 @@ async def _run_session(ws: WebSocket, client: str, settings: Settings) -> None:
         watcher = asyncio.create_task(_watch_interview(ws, session, interview, interview_id))
 
     buffer = bytearray()
+    audio_started_at = None  # first mic audio: the client starts recording together with the mic
     try:
         while True:
             # binary frames = mic audio; text frames = JSON control messages from the client
@@ -94,6 +95,7 @@ async def _run_session(ws: WebSocket, client: str, settings: Settings) -> None:
             if message["type"] == "websocket.disconnect":
                 raise WebSocketDisconnect(message.get("code", 1000))
             if message.get("bytes") is not None:
+                audio_started_at = audio_started_at or time.time()
                 buffer.extend(message["bytes"])
                 while len(buffer) >= FRAME_BYTES:
                     frame = bytes(buffer[:FRAME_BYTES])
@@ -112,7 +114,7 @@ async def _run_session(ws: WebSocket, client: str, settings: Settings) -> None:
             watcher.cancel()
         session.close()
         if interview:
-            task = asyncio.create_task(_finish_interview(settings, uuid.UUID(interview_id), interview.record(session.turns)))
+            task = asyncio.create_task(_finish_interview(settings, uuid.UUID(interview_id), interview.record(session.turns, audio_started_at)))
             _scoring.add(task)
             task.add_done_callback(_scoring.discard)
 

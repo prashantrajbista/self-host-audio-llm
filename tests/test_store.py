@@ -127,6 +127,7 @@ def test_api():
     assert client.get(f"/sessions/{sid}", headers=bob).status_code == 404
     audio = {"file": ("r.webm", b"opus", "audio/webm")}
     assert client.post(f"/sessions/{sid}/recording", files=audio, headers=alice).status_code == 404, "not started"
+    assert client.get(f"/sessions/{sid}/recording-url", headers=alice).status_code == 404, "no recording yet"
 
     async def start():
         async with sessions()() as db:
@@ -136,6 +137,9 @@ def test_api():
     assert client.post(f"/sessions/{sid}/recording", files=audio, headers=alice).json() == {"ok": True}
     assert client.get("/sessions", headers=alice).json()[0]["status"] == "live"
     assert client.get(f"/sessions/{sid}", headers=alice).json()["has_recording"]
+    assert client.get(f"/sessions/{sid}/recording-url", headers=bob).status_code == 404, "not bob's"
+    played = client.get(client.get(f"/sessions/{sid}/recording-url", headers=alice).json()["url"].removeprefix("http://testserver"))
+    assert played.content == b"opus", "signed recording URL plays the upload"
 
     # soft delete: hidden everywhere, but row and file are kept
     cv2 = asyncio.run(add_cv("alice"))

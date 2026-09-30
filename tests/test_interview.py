@@ -99,7 +99,8 @@ async def test_session_kickoff_and_turns():
     user = session.turns[1]
     assert user["text"] == "hello there" and user["start"] < user["end"] <= session.turns[2]["start"] + 1
 
-    record = iv.record(session.turns)
+    record = iv.record(session.turns, audio_started_at=123.0)
+    assert record["audio_started_at"] == 123.0
     assert record["questions"][0]["asked_at"] and record["questions"][1]["asked_at"] is None
     print("session kickoff + timed turns PASS")
 
