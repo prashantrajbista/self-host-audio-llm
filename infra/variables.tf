@@ -61,3 +61,21 @@ variable "budget_amount" {
   type        = number
   default     = 180
 }
+
+variable "ai_location" {
+  description = "Region of the Foundry resource; must offer gpt-4o-mini-transcribe and gpt-4o-mini-tts"
+  type        = string
+  default     = "eastus2"
+}
+
+variable "llm_deployment" {
+  description = "Interviewer + scoring model (deployment is named after the model)"
+  type        = object({ model = string, version = string, capacity = number })
+  default     = { model = "gpt-4.1-mini", version = "2025-04-14", capacity = 100 }
+}
+
+variable "audio_capacity" {
+  description = "Quota units for each of the transcribe and TTS deployments (default quota is 50)"
+  type        = number
+  default     = 50
+}

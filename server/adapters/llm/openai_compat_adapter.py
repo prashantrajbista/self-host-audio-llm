@@ -6,13 +6,15 @@ from server.adapters.llm.base import Done, LLMAdapter, LLMEvent, Message, TextDe
 
 
 class OpenAICompatAdapter(LLMAdapter):
-    """Any OpenAI-compatible /v1/chat/completions server with SSE streaming: OpenAI, vLLM, Ollama (/v1)."""
+    """Any OpenAI-compatible /v1/chat/completions server with SSE streaming: OpenAI, Azure OpenAI / Foundry
+    (endpoint .../openai), vLLM, Ollama (/v1)."""
 
     def __init__(self, name: str, endpoint: str, model: str, api_key: str = ""):
         self.name = name
         self._url = f"{endpoint.rstrip('/')}/v1/chat/completions"
         self._model = model
-        self._headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+        # Azure OpenAI / Foundry keys go in api-key; everything else reads Authorization (and ignores api-key)
+        self._headers = {"Authorization": f"Bearer {api_key}", "api-key": api_key} if api_key else {}
 
     async def generate_stream(
         self, messages: list[Message], tools: list[dict] | None = None, **params

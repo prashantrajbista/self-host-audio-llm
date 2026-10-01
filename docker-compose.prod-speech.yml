@@ -1,0 +1,62 @@
+# Local speech models on the VM instead of the Foundry APIs (e.g. once a GPU box is available). Usage:
+#   docker compose -f docker-compose.prod.yml -f docker-compose.prod-speech.yml up -d --build
+x-health: &health
+  interval: 10s
+  timeout: 5s
+  retries: 3
+  start_period: 300s
+
+x-python: &python
+  build: &python-build
+    context: .
+    dockerfile: docker/app.Dockerfile
+  env_file: .env.production
+  restart: unless-stopped
+
+services:
+  gateway:
+    environment:
+      STT_BACKEND: remote
+      TTS_BACKEND: remote
+      STT_ENDPOINT: http://stt:8001
+      TTS_ENDPOINT: http://tts:8002
+    depends_on:
+      stt:
+        condition: service_healthy
+      tts:
+        condition: service_healthy
+
+  stt:
+    <<: *python
+    build:
+      <<: *python-build
+      target: stt
+    # 4 vCPUs (2 physical cores): STT and TTS get 2 threads each instead of fighting over all of them
+    environment:
+      WHISPER_MODEL: base.en
+      STT_WORKERS: 1
+      STT_CPU_THREADS: 2
+    volumes:
+      - hf_cache:/root/.cache/huggingface
+    healthcheck:
+      <<: *health
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
+
+  tts:
+    <<: *python
+    build:
+      <<: *python-build
+      target: tts
+    environment:
+      TTS_ENGINE: onnx
+      TTS_WORKERS: 1
+      TTS_ONNX_THREADS: 2
+      OMP_NUM_THREADS: 2
+    volumes:
+      - hf_cache:/root/.cache/huggingface
+    healthcheck:
+      <<: *health
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8002/health')"]
+
+volumes:
+  hf_cache:

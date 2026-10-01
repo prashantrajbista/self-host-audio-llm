@@ -34,6 +34,13 @@ def get_stt(settings: Settings) -> STTAdapter:
 
             _stt_cache[key] = HTTPSTTAdapter(endpoint=settings.stt_endpoint)
         return _stt_cache[key]
+    if settings.stt_backend == "openai":
+        key = ("openai", settings.stt_endpoint, settings.stt_model, settings.openai_api_key)
+        if key not in _stt_cache:
+            from server.adapters.stt.openai_adapter import OpenAISTTAdapter
+
+            _stt_cache[key] = OpenAISTTAdapter(settings.stt_endpoint, settings.stt_model, settings.openai_api_key)
+        return _stt_cache[key]
     raise ValueError(f"Unknown STT_BACKEND: {settings.stt_backend}")
 
 
@@ -104,5 +111,14 @@ def get_tts(settings: Settings) -> TTSAdapter:
             from server.adapters.tts.http_client_adapter import HTTPTTSAdapter
 
             _tts_cache[key] = HTTPTTSAdapter(endpoint=settings.tts_endpoint)
+        return _tts_cache[key]
+    if settings.tts_backend == "openai":
+        key = ("openai", settings.tts_endpoint, settings.tts_model, settings.openai_api_key, settings.tts_voice, settings.tts_instructions)
+        if key not in _tts_cache:
+            from server.adapters.tts.openai_adapter import OpenAITTSAdapter
+
+            _tts_cache[key] = OpenAITTSAdapter(
+                settings.tts_endpoint, settings.tts_model, settings.openai_api_key, settings.tts_voice, settings.tts_instructions
+            )
         return _tts_cache[key]
     raise ValueError(f"Unknown TTS_BACKEND: {settings.tts_backend}")

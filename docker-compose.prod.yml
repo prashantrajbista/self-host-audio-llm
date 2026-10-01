@@ -2,6 +2,8 @@
 # *.example files). Only Caddy is published; everything else is on the internal network. Usage:
 #   docker compose -f docker-compose.prod.yml up -d --build
 # More replicas: GATEWAY_REPLICAS=2 FRONTEND_REPLICAS=2 docker compose -f docker-compose.prod.yml up -d
+# Speech-to-text and text-to-speech are APIs here (STT_BACKEND/TTS_BACKEND=openai, Microsoft Foundry). To run the
+# local models instead, add docker-compose.prod-speech.yml (see its header).
 x-health: &health
   interval: 10s
   timeout: 5s
@@ -56,42 +58,6 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
-      stt:
-        condition: service_healthy
-      tts:
-        condition: service_healthy
-
-  stt:
-    <<: *python
-    build:
-      <<: *python-build
-      target: stt
-    # 4 vCPUs (2 physical cores): STT and TTS get 2 threads each instead of fighting over all of them
-    environment:
-      WHISPER_MODEL: base.en
-      STT_WORKERS: 1
-      STT_CPU_THREADS: 2
-    volumes:
-      - hf_cache:/root/.cache/huggingface
-    healthcheck:
-      <<: *health
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
-
-  tts:
-    <<: *python
-    build:
-      <<: *python-build
-      target: tts
-    environment:
-      TTS_ENGINE: onnx
-      TTS_WORKERS: 1
-      TTS_ONNX_THREADS: 2
-      OMP_NUM_THREADS: 2
-    volumes:
-      - hf_cache:/root/.cache/huggingface
-    healthcheck:
-      <<: *health
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8002/health')"]
 
   frontend:
     build:
@@ -105,4 +71,3 @@ services:
 volumes:
   caddy_data:
   caddy_config:
-  hf_cache:

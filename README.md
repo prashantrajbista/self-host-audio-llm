@@ -66,6 +66,7 @@ Runs one full turn (transcribe → generate reply → synthesize speech) through
 
 ```bash
 uv run python -m tests.test_session          # state machine + barge-in, fake adapters, no models
+uv run python -m tests.test_openai_audio     # OpenAI/Foundry STT+TTS adapters against a mock HTTP server
 uv run python -m tests.test_resume           # dropped interview call: reconnect, takeover, hang-up, timeout — no models
 uv run python -m tests.test_agent            # agent loop, tools, confirmation, fallback, concurrency — no models
 uv run python -m tests.test_ws_integration   # real STT/LLM/TTS over an actual WebSocket

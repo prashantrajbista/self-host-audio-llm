@@ -55,6 +55,11 @@ class Settings(BaseSettings):
     stripe_price_credits_5: str = ""
     stripe_price_pass_30: str = ""
     cors_origins: list[str] = ["http://localhost:3000"]  # web client origins allowed to call the HTTP API
+    # STT_BACKEND/TTS_BACKEND=openai: OpenAI-compatible audio APIs (OpenAI, Azure OpenAI / Foundry) at STT_ENDPOINT /
+    # TTS_ENDPOINT with OPENAI_API_KEY; on Azure the model is the deployment name
+    stt_model: str = "gpt-4o-mini-transcribe"
+    tts_model: str = "gpt-4o-mini-tts"
+    tts_instructions: str = "Speak like a calm, professional job interviewer: warm, clear and at a natural pace."
     whisper_model: str = "small.en"
     tts_voice: str = "af_heart"  # default voice
     tts_speed: float = 1.15  # Kokoro speaking rate multiplier, 1.0 = normal
