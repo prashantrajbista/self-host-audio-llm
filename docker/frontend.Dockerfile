@@ -1,7 +1,8 @@
+# syntax=docker/dockerfile:1
 FROM node:20-alpine AS builder
 WORKDIR /app
-COPY client/package.json client/package-lock.json* ./
-RUN npm install
+COPY client/package.json client/package-lock.json ./
+RUN --mount=type=cache,target=/root/.npm npm ci
 COPY client/ .
 # NEXT_PUBLIC_* come from client/.env.production (copied above), baked in at build time
 RUN npm run build
