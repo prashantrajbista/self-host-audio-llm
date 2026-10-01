@@ -4,6 +4,7 @@
 
 import asyncio
 import sys
+import time
 
 from server.config import get_settings
 from server.gateway.factory import get_llm, get_stt, get_tts
@@ -28,7 +29,9 @@ async def main(wav_path: str):
     with open(wav_path, "rb") as f:
         audio = f.read()
 
-    await session._process_turn(asyncio.create_task(session._speculate(audio, prefetch=False)))
+    # a span marks it as something the user said; without one it's a hidden opening turn, never transcribed out
+    span = (time.time(), time.time() + 1)
+    await session._process_turn(asyncio.create_task(session._speculate(audio, prefetch=False)), span)
 
     transcript = "".join(e["data"] for e in events if e["type"] == "partial_transcript")
     reply_text = "".join(e["data"] for e in events if e["type"] == "token")
