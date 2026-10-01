@@ -162,6 +162,13 @@ export default function InterviewCall() {
         <p aria-live="polite" className="text-[0.9375rem] font-semibold text-ink-secondary">
           {call.connecting ? "Connecting…" : call.reconnecting ? "Connection lost. Reconnecting…" : call.muted ? "Muted" : STATE_LABEL[call.state]}
         </p>
+        {call.silenceHint && (
+          <p role="status" className="max-w-sm rounded-[12px] border border-divider bg-surface px-4 py-2 text-center text-sm text-ink shadow-ambient">
+            {call.silenceHint === "muted"
+              ? "You're muted. Unmute to answer."
+              : "We can't hear you. Check that your microphone is on and selected."}
+          </p>
+        )}
         <Captions turns={call.turns} state={call.state} hint={null} />
       </div>
       {confirmEnd && (

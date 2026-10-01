@@ -15,6 +15,11 @@ export type ErrorKind = "mic" | "no-mic" | "unreachable" | "dropped" | "busy" | 
 const CLOSE_ERRORS: Record<number, ErrorKind> = { 1013: "busy", 1008: "refused", 4402: "no-credits" };
 // An interview whose connection drops is reconnected after these delays (ms). The server keeps it for 60s.
 const RECONNECT_DELAYS = [1000, 3000, 6000, 10000, 15000];
+// Below this mic level the input counts as dead quiet (a real mic in a quiet room still picks up some noise)
+const MIC_FLAT_LEVEL = 0.01;
+
+// Why the candidate may have gone quiet, shown when the server reports a long silence
+export type SilenceHint = "muted" | "no-mic";
 
 export interface Turn {
   role: "user" | "assistant";
@@ -32,6 +37,8 @@ export function useVoiceSession({ onRecording }: { onRecording?: (audio: Blob) =
   const [interruptTick, setInterruptTick] = useState(0);
   const [muted, setMuted] = useState(false);
   const [reconnecting, setReconnecting] = useState(false);
+  const [silenceHint, setSilenceHint] = useState<SilenceHint | null>(null);
+  const micPeakRef = useRef(0); // loudest mic level since the last silence report
   const [question, setQuestion] = useState<Question | null>(null);
   const [interviewId, setInterviewId] = useState<string | null>(null); // set when the interviewer ends the call
   // time from "thinking" to first reply audio, ms: last turn + running average for this call
@@ -44,7 +51,12 @@ export function useVoiceSession({ onRecording }: { onRecording?: (audio: Blob) =
 
   // Levels 0..1, polled per animation frame by the orb, not React state. getLevel (louder of the
   // two) drives the sphere; getMicLevel alone drives the "you're being heard" ring.
-  const getMicLevel = useCallback(() => audioLevel(micRef.current?.analyser ?? null), []);
+  // Also remembers the loudest level, to tell a dead or blocked mic from a candidate who is just thinking.
+  const getMicLevel = useCallback(() => {
+    const level = audioLevel(micRef.current?.analyser ?? null);
+    micPeakRef.current = Math.max(micPeakRef.current, level);
+    return level;
+  }, []);
   const getLevel = useCallback(
     () => Math.max(getMicLevel(), audioLevel(playerRef.current?.analyser ?? null)),
     [getMicLevel],
@@ -63,6 +75,7 @@ export function useVoiceSession({ onRecording }: { onRecording?: (audio: Blob) =
     playerRef.current?.close();
     playerRef.current = null;
     setMuted(false);
+    setSilenceHint(null);
   }, [onRecording]);
 
   // End the current socket without its onClose treating it as a drop; shared by hang-up and failures.
@@ -137,7 +150,10 @@ export function useVoiceSession({ onRecording }: { onRecording?: (audio: Blob) =
             else if (s !== "speaking") thinkingAtRef.current = null; // turn ended without audio: don't count it
             setState(s);
           },
-          onPartialTranscript: (text) => setTurns((t) => [...t, { role: "user", text }]),
+          onPartialTranscript: (text) => {
+          setSilenceHint(null);
+          setTurns((t) => [...t, { role: "user", text }]);
+        },
           onToken: (text) =>
             setTurns((t) => {
               const last = t[t.length - 1];
@@ -154,6 +170,11 @@ export function useVoiceSession({ onRecording }: { onRecording?: (audio: Blob) =
             setTurns((t) => [...t, { role: "assistant", text: message }]);
           },
           onQuestion: setQuestion,
+        // the interviewer is about to check in: say so if the mic is muted or hearing nothing at all
+        onSilence: (muted) => {
+          setSilenceHint(muted ? "muted" : micPeakRef.current < MIC_FLAT_LEVEL ? "no-mic" : null);
+          micPeakRef.current = 0;
+        },
           // the server closes right after, once the goodbye has played: end cleanly, not as a drop
           onInterviewEnd: (id) => {
             feedback("end");
@@ -220,6 +241,9 @@ export function useVoiceSession({ onRecording }: { onRecording?: (audio: Blob) =
     if (!track) return;
     track.enabled = !track.enabled;
     setMuted(!track.enabled);
+    if (track.enabled) setSilenceHint(null);
+    const socket = socketRef.current;
+    if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: "mute", muted: !track.enabled }));
   }, []);
 
   return {
@@ -230,6 +254,7 @@ export function useVoiceSession({ onRecording }: { onRecording?: (audio: Blob) =
     interruptTick,
     muted,
     reconnecting,
+    silenceHint,
     latency,
     question,
     interviewId,

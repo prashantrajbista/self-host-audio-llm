@@ -56,7 +56,7 @@ async def test_question_flow():
     assert await late.next_question() == WRAP_UP, "overtime wraps up instead of asking more"
 
     agent = iv.agent()
-    assert {t.name for t in agent.tools} == {"next_question"}
+    assert {t.name for t in agent.tools} == {"next_question", "give_time"}
     assert "Stay in your role as the interviewer" in agent.system_prompt, "off-topic guard"
     assert "senior SWE" in agent.system_prompt and "friendly voice assistant" not in agent.system_prompt
     print("question flow PASS")

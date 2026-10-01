@@ -36,6 +36,20 @@ RESUME_LINE = (
     "then briefly repeat the question you were on, or, if they were mid-answer, ask them to pick up where they "
     "left off. Don't call next_question for this."
 )
+# A candidate gone quiet after a question. Each step waits this long after the previous prompt finished playing;
+# any speech, or a new question, starts over. Seconds are cumulative: ~20s, ~45s, ~90s.
+NUDGES = (
+    (20, "The candidate has been quiet for a while. In one short sentence, check in gently: tell them to take their "
+     "time, and offer to repeat or rephrase the question. Don't call next_question."),
+    (25, "The candidate is still quiet. In one short sentence, offer to come back to this question later or move on. "
+     "Don't call next_question yet."),
+    (45, "The candidate hasn't answered for over a minute. Say briefly that you'll move on, then call next_question."),
+)
+IDLE_END_S = 180  # no speech at all from the candidate for this long ends the call (frees the slot, stops API spend)
+IDLE_END = (
+    "The candidate has been silent for several minutes. In one short sentence, say you'll stop the interview here "
+    "and they can start a new one any time. Don't call next_question."
+)
 
 
 @dataclass
@@ -155,6 +169,8 @@ async def _run_session(ws: WebSocket, client: str, settings: Settings) -> None:
                 control = json.loads(message["text"])
                 if control.get("type") == "interrupt":
                     await session.interrupt()
+                elif control.get("type") == "mute":
+                    session.muted = bool(control.get("muted"))
     except WebSocketDisconnect as e:
         close_code = e.code
         logger.info("client disconnected: %s (code %s)", client, e.code)
@@ -267,11 +283,27 @@ async def _finish_interview(settings: Settings, session_id: uuid.UUID, record: d
 
 
 async def _watch_interview(ws: WebSocket, session: VoiceSession, interview: Interview, interview_id: str) -> None:
-    """Close the call once the interviewer ends it (after the goodbye plays), or at the hard time limit."""
+    """Prompt a candidate who has gone quiet, and close the call once the interviewer ends it (after the goodbye
+    plays), the candidate stays silent too long, or at the hard time limit."""
     # from the interview's start, not this connection's: a resumed call keeps its original time limit
     deadline = interview.started_at + (interview.pack["flow"]["duration_min"] + INTERVIEW_GRACE_MIN) * 60
+    step, heard, question = 0, session.last_heard, interview.index
     while not interview.ended and time.time() < deadline:
         await asyncio.sleep(0.5)
+        if session.last_heard != heard or interview.index != question:  # they spoke, or a new question: start over
+            step, heard, question = 0, session.last_heard, interview.index
+        silence = session.silence_s()
+        if silence and time.monotonic() - session.last_heard >= IDLE_END_S:
+            interview.idle = interview.ended = True
+            await session.open(IDLE_END)
+            break
+        if step < len(NUDGES) and silence >= NUDGES[step][0] and time.time() >= interview.quiet_until:
+            # the client shows why it may be quiet (muted, or a mic that hears nothing); muted = no spoken nudge
+            await ws.send_json({"type": "silence", "data": {"muted": session.muted}})
+            if not session.muted:
+                await session.open(NUDGES[step][1])
+            step += 1
     await session.drain()
-    await ws.send_json({"type": "interview_end", "data": {"id": interview_id, "completed": interview.ended}})
+    completed = interview.ended and not interview.idle
+    await ws.send_json({"type": "interview_end", "data": {"id": interview_id, "completed": completed}})
     await ws.close()

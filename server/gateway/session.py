@@ -143,9 +143,13 @@ class VoiceSession:
         self.turns: list[dict] = []
         self._utterance_start = 0.0
         self._reply_start: float | None = None  # first reply audio sent this turn
+        self.last_heard = time.monotonic()  # last speech frame from the user (any sound the VAD calls speech)
+        self.muted = False  # the client says its mic is muted: silence is expected, not a candidate stuck
 
     async def handle_audio_frame(self, frame: bytes) -> None:
         is_speech = self._vad.is_speech(frame)
+        if is_speech:
+            self.last_heard = time.monotonic()
 
         if not self._speech_started:
             self._preroll.append(frame)
@@ -426,6 +430,14 @@ class VoiceSession:
 
     def attach(self, send_json: Callable[[dict], Awaitable[None]], send_bytes: Callable[[bytes], Awaitable[None]]) -> None:
         self._send_json, self._send_bytes = send_json, send_bytes
+        self.last_heard = time.monotonic()  # the time spent disconnected isn't the candidate's silence
+
+    def silence_s(self) -> float:
+        """Seconds of silence on both sides: 0 while a turn is in flight, the reply is still playing on the
+        client, or the user is talking."""
+        if self.state != "idle" or self._speech_started:
+            return 0.0
+        return max(0.0, time.monotonic() - max(self.last_heard, self._playing_until))
 
     def close(self) -> None:
         """Connection gone: stop in-flight work so it doesn't keep running and sending to a dead socket."""

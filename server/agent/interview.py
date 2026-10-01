@@ -14,6 +14,7 @@ from server.agent.tools import tool
 
 # level of the job being interviewed for (not the candidate's own experience): sets the bar for questions + grading
 SENIORITIES = ("junior", "mid", "senior")
+THINK_TIME_S = 60  # the candidate asked for a moment: no silence nudges for this long
 LEVEL_WORDS = {"junior": "entry-level", "mid": "mid-level", "senior": "senior"}  # as said in prompts
 INTERVIEW_TYPES = ("behavioral", "hr", "mixed")  # mixed = any question type
 WRAP_UP = (
@@ -100,6 +101,8 @@ class Interview:
         self.asked_at: list[float] = []  # epoch seconds each plan[i] was handed to the interviewer
         self.started_at = time.time()
         self.ended = False
+        self.idle = False  # ended because the candidate went silent, not by finishing the questions
+        self.quiet_until = 0.0  # epoch seconds: the candidate asked for time to think, don't nudge before this
 
     def overtime(self) -> bool:
         return time.time() - self.started_at > self.pack["flow"]["duration_min"] * 60
@@ -132,6 +135,12 @@ class Interview:
             current one, including any follow-ups, or wants to skip it."""
             return await self.next_question()
 
+        @tool(timeout=2.0)
+        async def give_time() -> str:
+            """Call when the candidate asks for a moment to think before answering."""
+            self.quiet_until = time.time() + THINK_TIME_S
+            return "Done. Reply with one short line, like \"Sure, take your time.\", then wait for them."
+
         flow = self.pack["flow"]
         kind = "behavioral and HR" if self.interview_type == "mixed" else self.interview_type
         instructions = (
@@ -149,6 +158,7 @@ class Interview:
             "afterwards. When an acknowledgment fits, keep it short and vary it (\"okay\", \"got it\", \"I see\"). "
             "Don't thank the candidate after every answer, and don't end your turns with \"thanks\".\n"
             "- Don't say \"let me check\" before calling a tool; go straight into the next question.\n"
+            "- If the candidate asks for a moment to think, call give_time.\n"
             "- If the candidate asks to skip or can't answer, move on with next_question. Answer clarifying questions "
             "briefly without giving away a good answer.\n"
             "- If you were interrupted before finishing a question you already received, ask it again rather than "
@@ -169,7 +179,7 @@ class Interview:
         return AgentDef(
             name=f"interview:{self.pack['id']}",
             instructions=instructions,
-            tools=(next_question,),
+            tools=(next_question, give_time),
             voice=self.pack.get("voice"),
         )
 
@@ -185,7 +195,7 @@ class Interview:
             "started_at": self.started_at,
             "audio_started_at": audio_started_at,
             "ended_at": time.time(),
-            "completed": self.ended,
+            "completed": self.ended and not self.idle,
             "questions": [
                 {**q, "asked_at": self.asked_at[i] if i < len(self.asked_at) else None} for i, q in enumerate(self.plan)
             ],

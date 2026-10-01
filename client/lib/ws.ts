@@ -7,7 +7,8 @@ type ServerMessage =
   | { type: "interrupt"; data: null }
   | { type: "error"; data: string }
   | { type: "question"; data: Question }
-  | { type: "interview_end"; data: { id: string; completed: boolean } };
+  | { type: "interview_end"; data: { id: string; completed: boolean } }
+  | { type: "silence"; data: { muted: boolean } };
 
 export interface Question {
   index: number;
@@ -27,6 +28,7 @@ export interface VoiceSocketHandlers {
   onServerError: (message: string) => void;
   onQuestion: (question: Question) => void;
   onInterviewEnd: (id: string) => void;
+  onSilence?: (muted: boolean) => void;
   onAudioChunk: (chunk: ArrayBuffer) => void;
   onOpen: () => void;
   onClose: (code: number) => void;
@@ -54,6 +56,7 @@ export function connectVoiceSocket(
       if (msg.type === "error") handlers.onServerError(msg.data);
       if (msg.type === "question") handlers.onQuestion(msg.data);
       if (msg.type === "interview_end") handlers.onInterviewEnd(msg.data.id);
+      if (msg.type === "silence") handlers.onSilence?.(msg.data.muted);
     } else {
       handlers.onAudioChunk(event.data as ArrayBuffer);
     }
