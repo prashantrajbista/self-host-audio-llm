@@ -153,14 +153,14 @@ export default function InterviewCall() {
       </div>
       <div className="flex w-full flex-1 flex-col items-center justify-center gap-6">
         <Orb
-          state={call.connecting ? "connecting" : call.state}
+          state={call.connecting || call.reconnecting ? "connecting" : call.state}
           size={240}
           interruptTick={call.interruptTick}
           getLevel={call.getLevel}
           getMicLevel={call.getMicLevel}
         />
         <p aria-live="polite" className="text-[0.9375rem] font-semibold text-ink-secondary">
-          {call.connecting ? "Connecting…" : call.muted ? "Muted" : STATE_LABEL[call.state]}
+          {call.connecting ? "Connecting…" : call.reconnecting ? "Connection lost. Reconnecting…" : call.muted ? "Muted" : STATE_LABEL[call.state]}
         </p>
         <Captions turns={call.turns} state={call.state} hint={null} />
       </div>

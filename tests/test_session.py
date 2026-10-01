@@ -181,6 +181,7 @@ async def main():
 
     class FakeWS:
         client = None
+        query_params: dict = {}
         closed_with = None
 
         async def accept(self):

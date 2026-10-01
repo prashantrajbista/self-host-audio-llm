@@ -85,6 +85,10 @@ def _wall(monotonic: float) -> float:
     return time.time() + max(0.0, monotonic - time.monotonic())
 
 
+async def _drop(_) -> None:
+    """Output sink while no client is connected."""
+
+
 def _discard_speculation(task: asyncio.Task) -> None:
     """Speech resumed: drop the speculative result. Retrieves any exception (no "never retrieved" log)
     and cancels a prefetched LLM request that already started."""
@@ -406,6 +410,22 @@ class VoiceSession:
         self._speech_started = False
         self._silence_frames = 0
         await self._set_state("idle")
+
+    async def detach(self) -> None:
+        """Connection lost but the client may come back: stop the turn the way a barge-in does (history keeps
+        what was heard), drop half-heard input, and discard output until attach()."""
+        self._send_json = self._send_bytes = _drop
+        await self._stop_turn()
+        self._audio_buffer.clear()
+        self._pending_frames.clear()
+        self._preroll.clear()
+        self._speech_started = False
+        self._silence_frames = 0
+        self._playing_until = 0.0
+        self.state = "idle"
+
+    def attach(self, send_json: Callable[[dict], Awaitable[None]], send_bytes: Callable[[bytes], Awaitable[None]]) -> None:
+        self._send_json, self._send_bytes = send_json, send_bytes
 
     def close(self) -> None:
         """Connection gone: stop in-flight work so it doesn't keep running and sending to a dead socket."""

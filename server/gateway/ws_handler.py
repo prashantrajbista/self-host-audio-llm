@@ -3,6 +3,7 @@ import json
 import logging
 import time
 import uuid
+from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from fastapi import WebSocket, WebSocketDisconnect
@@ -28,9 +29,38 @@ BUSY_CLOSE_CODE = 1013  # "try again later": the client shows "all lines busy" i
 POLICY_CLOSE_CODE = 1008  # not signed in, not your interview, or already started
 NO_CREDITS_CLOSE_CODE = 4402  # the client shows the paywall
 INTERVIEW_GRACE_MIN = 2  # hard stop this long after the pack's duration, if the interviewer never wraps up
+RESUME_WINDOW_S = 60  # a dropped interview waits this long for the same tab to reconnect before it's scored
+HANGUP_CODES = (1000, 1001)  # the client hung up or closed the tab: finish now, nobody is coming back
+RESUME_LINE = (
+    "The call dropped for a moment and the candidate just reconnected. In one short sentence say you got cut off, "
+    "then briefly repeat the question you were on, or, if they were mid-answer, ask them to pick up where they "
+    "left off. Don't call next_question for this."
+)
+
+
+@dataclass
+class _Call:
+    """A paid interview's state, which outlives one connection so a dropped call can resume."""
+
+    uid: str
+    interview: Interview
+    session: VoiceSession
+    audio_started_at: float | None = None
+    task: asyncio.Task | None = None  # live: the connection's task; parked: the timer that finishes it
+
 
 _active_sessions = 0
-_scoring: set[asyncio.Task] = set()  # strong refs: a bare create_task can be garbage-collected mid-run
+_background: set[asyncio.Task] = set()  # strong refs: a bare create_task can be garbage-collected mid-run
+# ponytail: in-process only, so a gateway restart drops parked calls (they're never scored); fine with one gateway
+_live: dict[str, _Call] = {}
+_parked: dict[str, _Call] = {}
+
+
+def _spawn(coro) -> asyncio.Task:
+    task = asyncio.create_task(coro)
+    _background.add(task)
+    task.add_done_callback(_background.discard)
+    return task
 
 
 async def websocket_endpoint(ws: WebSocket) -> None:
@@ -38,8 +68,11 @@ async def websocket_endpoint(ws: WebSocket) -> None:
     await ws.accept()
     client = f"{ws.client.host}:{ws.client.port}" if ws.client else "unknown"
     settings = get_settings()
-    # refuse rather than admit: past capacity every call degrades, not just the newest one
-    if _active_sessions >= settings.max_sessions:
+    # refuse rather than admit: past capacity every call degrades, not just the newest one.
+    # A reconnecting interview is let in: its slot was only freed by the drop.
+    sid = ws.query_params.get("session_id")
+    resuming = sid in _parked or sid in _live
+    if _active_sessions >= settings.max_sessions and not resuming:
         logger.warning("at capacity (%d sessions), refusing %s", _active_sessions, client)
         await ws.close(code=BUSY_CLOSE_CODE, reason="busy")
         return
@@ -50,16 +83,7 @@ async def websocket_endpoint(ws: WebSocket) -> None:
         _active_sessions -= 1
 
 
-async def _run_session(ws: WebSocket, client: str, settings: Settings) -> None:
-    logger.info("client connected: %s", client)
-    interview = None
-    interview_id = ws.query_params.get("session_id")
-    if interview_id:
-        interview, refusal = await _start_interview(ws.query_params, settings, ws.send_json)
-        if interview is None:
-            await ws.close(code=refusal, reason="interview refused")
-            return
-    agent = interview.agent() if interview else get_agent(ws.query_params.get("agent"), settings.agent)
+def _new_session(ws: WebSocket, settings: Settings, agent) -> VoiceSession:
     # client's pick wins, then the agent's own voice, then the configured default
     voice = resolve_voice(settings, ws.query_params.get("voice") or agent.voice)
     logger.debug(
@@ -70,7 +94,7 @@ async def _run_session(ws: WebSocket, client: str, settings: Settings) -> None:
         voice,
         agent.name,
     )
-    session = VoiceSession(
+    return VoiceSession(
         stt=get_stt(settings),
         llm=get_llm(settings),
         tts=get_tts(settings),
@@ -81,13 +105,39 @@ async def _run_session(ws: WebSocket, client: str, settings: Settings) -> None:
         agent=agent,
     )
 
+
+async def _run_session(ws: WebSocket, client: str, settings: Settings) -> None:
+    logger.info("client connected: %s", client)
+    call = None
     watcher = None
-    if interview:
-        await session.open(await interview.kickoff())
-        watcher = asyncio.create_task(_watch_interview(ws, session, interview, interview_id))
+    interview_id = ws.query_params.get("session_id")
+    if interview_id:
+        uid = await verify_token(settings, ws.query_params.get("token", ""))
+        call = await _resume(interview_id, uid)
+        opening = RESUME_LINE
+        if call is None:
+            interview, refusal = await _start_interview(ws.query_params, uid, settings, ws.send_json)
+            if interview is None:
+                await ws.close(code=refusal, reason="interview refused")
+                return
+            call = _Call(uid, interview, _new_session(ws, settings, interview.agent()))
+            opening = await interview.kickoff()
+        else:
+            logger.info("interview %s: resumed", interview_id)
+        call.task = asyncio.current_task()
+        call.interview.emit = ws.send_json
+        call.session.attach(ws.send_json, ws.send_bytes)
+        _live[interview_id] = call
+        session = call.session
+        await session.open(opening)
+        watcher = asyncio.create_task(_watch_interview(ws, session, call.interview, interview_id))
+    else:
+        session = _new_session(ws, settings, get_agent(ws.query_params.get("agent"), settings.agent))
 
     buffer = bytearray()
-    audio_started_at = None  # first mic audio: the client starts recording together with the mic
+    audio_started_at = call.audio_started_at if call else None  # first mic audio: the client starts recording with the mic
+    close_code = None  # set when the client went away; None = we crashed or closed it
+    taken_over = False
     try:
         while True:
             # binary frames = mic audio; text frames = JSON control messages from the client
@@ -105,23 +155,75 @@ async def _run_session(ws: WebSocket, client: str, settings: Settings) -> None:
                 control = json.loads(message["text"])
                 if control.get("type") == "interrupt":
                     await session.interrupt()
-    except WebSocketDisconnect:
-        logger.info("client disconnected: %s", client)
+    except WebSocketDisconnect as e:
+        close_code = e.code
+        logger.info("client disconnected: %s (code %s)", client, e.code)
+    except asyncio.CancelledError:
+        # a reconnect of this interview arrived before this connection noticed it was dead
+        if not call or _live.get(interview_id) is call:
+            raise
+        taken_over = True
     except Exception:
         logger.exception("session crashed: %s", client)
     finally:
         if watcher:
             watcher.cancel()
-        session.close()
-        if interview:
-            task = asyncio.create_task(_finish_interview(settings, uuid.UUID(interview_id), interview.record(session.turns, audio_started_at)))
-            _scoring.add(task)
-            task.add_done_callback(_scoring.discard)
+        if call is None:
+            session.close()
+        else:
+            call.audio_started_at = audio_started_at
+            await _hand_off(settings, interview_id, call, close_code, taken_over)
 
 
-async def _start_interview(params, settings: Settings, emit) -> tuple[Interview | None, int]:
+async def _resume(interview_id: str, uid: str | None) -> _Call | None:
+    """The caller's own dropped interview, if it can still continue."""
+    call = _live.get(interview_id)
+    if call and call.uid == uid:
+        del _live[interview_id]
+        call.task.cancel()  # the old connection hands the call over (see _run_session) and ends
+        await asyncio.wait([call.task])
+        return call
+    call = _parked.get(interview_id)
+    if call and call.uid == uid:
+        del _parked[interview_id]
+        call.task.cancel()  # the timer that would have finished it
+        return call
+    return None
+
+
+async def _hand_off(settings: Settings, interview_id: str, call: _Call, close_code: int | None, taken_over: bool) -> None:
+    """Connection over: finish the interview, or park it for a reconnect if the call just dropped."""
+    if _live.get(interview_id) is call:
+        del _live[interview_id]
+    if taken_over:
+        await call.session.detach()
+        return
+    dropped = close_code is not None and close_code not in HANGUP_CODES
+    if dropped and not call.interview.ended and not call.interview.overtime():
+        logger.info("interview %s: dropped, waiting %ds for a reconnect", interview_id, RESUME_WINDOW_S)
+        await call.session.detach()
+        _parked[interview_id] = call
+        call.task = _spawn(_expire(settings, interview_id, call))
+        return
+    _finish(settings, interview_id, call)
+
+
+async def _expire(settings: Settings, interview_id: str, call: _Call) -> None:
+    await asyncio.sleep(RESUME_WINDOW_S)
+    if _parked.get(interview_id) is call:
+        del _parked[interview_id]
+        logger.info("interview %s: no reconnect", interview_id)
+        _finish(settings, interview_id, call)
+
+
+def _finish(settings: Settings, interview_id: str, call: _Call) -> None:
+    call.session.close()
+    record = call.interview.record(call.session.turns, call.audio_started_at)
+    _spawn(_finish_interview(settings, uuid.UUID(interview_id), record))
+
+
+async def _start_interview(params, uid: str | None, settings: Settings, emit) -> tuple[Interview | None, int]:
     """Signed-in interview: the caller must own a prepared, unstarted session; starting it charges for it."""
-    uid = await verify_token(settings, params.get("token", ""))
     try:
         session_id = uuid.UUID(params["session_id"])
     except ValueError:
@@ -166,8 +268,9 @@ async def _finish_interview(settings: Settings, session_id: uuid.UUID, record: d
 
 async def _watch_interview(ws: WebSocket, session: VoiceSession, interview: Interview, interview_id: str) -> None:
     """Close the call once the interviewer ends it (after the goodbye plays), or at the hard time limit."""
-    deadline = time.monotonic() + (interview.pack["flow"]["duration_min"] + INTERVIEW_GRACE_MIN) * 60
-    while not interview.ended and time.monotonic() < deadline:
+    # from the interview's start, not this connection's: a resumed call keeps its original time limit
+    deadline = interview.started_at + (interview.pack["flow"]["duration_min"] + INTERVIEW_GRACE_MIN) * 60
+    while not interview.ended and time.time() < deadline:
         await asyncio.sleep(0.5)
     await session.drain()
     await ws.send_json({"type": "interview_end", "data": {"id": interview_id, "completed": interview.ended}})

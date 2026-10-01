@@ -13,6 +13,8 @@ export type ErrorKind = "mic" | "no-mic" | "unreachable" | "dropped" | "busy" | 
 
 // server/gateway/ws_handler.py
 const CLOSE_ERRORS: Record<number, ErrorKind> = { 1013: "busy", 1008: "refused", 4402: "no-credits" };
+// An interview whose connection drops is reconnected after these delays (ms). The server keeps it for 60s.
+const RECONNECT_DELAYS = [1000, 3000, 6000, 10000, 15000];
 
 export interface Turn {
   role: "user" | "assistant";
@@ -29,6 +31,7 @@ export function useVoiceSession({ onRecording }: { onRecording?: (audio: Blob) =
   const [error, setError] = useState<ErrorKind | null>(null);
   const [interruptTick, setInterruptTick] = useState(0);
   const [muted, setMuted] = useState(false);
+  const [reconnecting, setReconnecting] = useState(false);
   const [question, setQuestion] = useState<Question | null>(null);
   const [interviewId, setInterviewId] = useState<string | null>(null); // set when the interviewer ends the call
   // time from "thinking" to first reply audio, ms: last turn + running average for this call
@@ -67,10 +70,11 @@ export function useVoiceSession({ onRecording }: { onRecording?: (audio: Blob) =
     (nextError: ErrorKind | null) => {
       const socket = socketRef.current;
       socketRef.current = null;
-      socket?.close();
+      socket?.close(1000); // 1000 = hung up on purpose: the server finishes the interview instead of waiting for a reconnect
       teardown();
       setState("disconnected");
       setConnecting(false);
+      setReconnecting(false);
       setError(nextError);
     },
     [teardown],
@@ -92,82 +96,104 @@ export function useVoiceSession({ onRecording }: { onRecording?: (audio: Blob) =
       thinkingAtRef.current = null;
       setConnecting(true);
       playerRef.current = new Player(24000);
-      let opened = false;
+      const url = gatewayWsUrl(voice, interview);
+      let attempt = 0;
 
-      const socket = connectVoiceSocket(gatewayWsUrl(voice, interview), {
-        onOpen: async () => {
-          opened = true;
-          try {
-            const mic = await startMic((pcm16) => {
-              if (socket.readyState === WebSocket.OPEN) socket.send(pcm16);
-            });
-            // call ended while the permission prompt was open: release the mic we just got
-            if (socketRef.current !== socket) {
-              mic.stream.getTracks().forEach((t) => t.stop());
-              void mic.ctx.close();
+      const open = () => {
+        let opened = false;
+        const socket = connectVoiceSocket(url, {
+          onOpen: async () => {
+            opened = true;
+            attempt = 0;
+            // a reconnect: the mic and recording kept running through the drop
+            if (micRef.current) {
+              setReconnecting(false);
               return;
             }
-            micRef.current = mic;
-            if (onRecording && playerRef.current) recorderRef.current = startRecording(playerRef.current.mixWith(mic.stream));
-            setState("idle");
-            setConnecting(false);
-            feedback("connect");
-          } catch (err) {
-            if (socketRef.current !== socket) return;
-            closeSession(err instanceof DOMException && err.name === "NotFoundError" ? "no-mic" : "mic");
+            try {
+              const mic = await startMic((pcm16) => {
+                const live = socketRef.current;
+                if (live?.readyState === WebSocket.OPEN) live.send(pcm16);
+              });
+              // call ended while the permission prompt was open: release the mic we just got
+              if (socketRef.current !== socket) {
+                mic.stream.getTracks().forEach((t) => t.stop());
+                void mic.ctx.close();
+                return;
+              }
+              micRef.current = mic;
+              if (onRecording && playerRef.current) recorderRef.current = startRecording(playerRef.current.mixWith(mic.stream));
+              setState("idle");
+              setConnecting(false);
+              feedback("connect");
+            } catch (err) {
+              if (socketRef.current !== socket) return;
+              closeSession(err instanceof DOMException && err.name === "NotFoundError" ? "no-mic" : "mic");
+              feedback("error");
+            }
+          },
+          onState: (s) => {
+            if (s === "thinking") thinkingAtRef.current = performance.now();
+            else if (s !== "speaking") thinkingAtRef.current = null; // turn ended without audio: don't count it
+            setState(s);
+          },
+          onPartialTranscript: (text) => setTurns((t) => [...t, { role: "user", text }]),
+          onToken: (text) =>
+            setTurns((t) => {
+              const last = t[t.length - 1];
+              if (last?.role === "assistant") return [...t.slice(0, -1), { ...last, text: last.text + text }];
+              return [...t, { role: "assistant", text }];
+            }),
+          onInterrupt: () => {
+            playerRef.current?.stopAll();
+            setInterruptTick((t) => t + 1);
+          },
+          // a turn failed server-side (session stays up): chime and show what the assistant is saying
+          onServerError: (message) => {
             feedback("error");
-          }
-        },
-        onState: (s) => {
-          if (s === "thinking") thinkingAtRef.current = performance.now();
-          else if (s !== "speaking") thinkingAtRef.current = null; // turn ended without audio: don't count it
-          setState(s);
-        },
-        onPartialTranscript: (text) => setTurns((t) => [...t, { role: "user", text }]),
-        onToken: (text) =>
-          setTurns((t) => {
-            const last = t[t.length - 1];
-            if (last?.role === "assistant") return [...t.slice(0, -1), { ...last, text: last.text + text }];
-            return [...t, { role: "assistant", text }];
-          }),
-        onInterrupt: () => {
-          playerRef.current?.stopAll();
-          setInterruptTick((t) => t + 1);
-        },
-        // a turn failed server-side (session stays up): chime and show what the assistant is saying
-        onServerError: (message) => {
-          feedback("error");
-          setTurns((t) => [...t, { role: "assistant", text: message }]);
-        },
-        onQuestion: setQuestion,
-        // the server closes right after, once the goodbye has played: end cleanly, not as a drop
-        onInterviewEnd: (id) => {
-          feedback("end");
-          closeSession(null);
-          setInterviewId(id);
-        },
-        onAudioChunk: (chunk) => {
-          if (thinkingAtRef.current !== null) {
-            const ms = performance.now() - thinkingAtRef.current;
-            thinkingAtRef.current = null;
-            setLatency((l) => {
-              const count = (l?.count ?? 0) + 1;
-              return { last: ms, avg: ((l?.avg ?? 0) * (count - 1) + ms) / count, count };
-            });
-          }
-          playerRef.current?.playChunk(chunk);
-        },
-        onClose: (code) => {
-          // only an unexpected close lands here: hang-ups and failures null socketRef first, and a
-          // stale socket closing after a new call started must not tear that call down
-          if (socketRef.current !== socket) return;
-          closeSession(CLOSE_ERRORS[code] ?? (opened ? "dropped" : "unreachable"));
-          feedback("error");
-        },
-        onError: () => {}, // always followed by onClose, which classifies the failure
-      });
+            setTurns((t) => [...t, { role: "assistant", text: message }]);
+          },
+          onQuestion: setQuestion,
+          // the server closes right after, once the goodbye has played: end cleanly, not as a drop
+          onInterviewEnd: (id) => {
+            feedback("end");
+            closeSession(null);
+            setInterviewId(id);
+          },
+          onAudioChunk: (chunk) => {
+            if (thinkingAtRef.current !== null) {
+              const ms = performance.now() - thinkingAtRef.current;
+              thinkingAtRef.current = null;
+              setLatency((l) => {
+                const count = (l?.count ?? 0) + 1;
+                return { last: ms, avg: ((l?.avg ?? 0) * (count - 1) + ms) / count, count };
+              });
+            }
+            playerRef.current?.playChunk(chunk);
+          },
+          onClose: (code) => {
+            // only an unexpected close lands here: hang-ups and failures null socketRef first, and a
+            // stale socket closing after a new call started must not tear that call down
+            if (socketRef.current !== socket) return;
+            // an interview that was under way: try to pick it up again (the server waits for us)
+            const retrying = interview && micRef.current;
+            if (retrying && attempt < RECONNECT_DELAYS.length && !(code in CLOSE_ERRORS)) {
+              playerRef.current?.stopAll();
+              setReconnecting(true);
+              setTimeout(() => {
+                if (socketRef.current === socket) open(); // not hung up meanwhile
+              }, RECONNECT_DELAYS[attempt++]);
+              return;
+            }
+            closeSession(retrying ? "dropped" : (CLOSE_ERRORS[code] ?? (opened ? "dropped" : "unreachable")));
+            feedback("error");
+          },
+          onError: () => {}, // always followed by onClose, which classifies the failure
+        });
 
-      socketRef.current = socket;
+        socketRef.current = socket;
+      };
+      open();
     },
     [teardown, closeSession, onRecording],
   );
@@ -203,6 +229,7 @@ export function useVoiceSession({ onRecording }: { onRecording?: (audio: Blob) =
     error,
     interruptTick,
     muted,
+    reconnecting,
     latency,
     question,
     interviewId,
