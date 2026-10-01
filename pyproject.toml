@@ -24,6 +24,11 @@ dependencies = [
     "stripe>=15.6.1",
     "azure-storage-blob[aio]>=12.30.3",
     "kokoro-onnx>=0.6.1",
+    "opentelemetry-sdk>=1.45.0",
+    "opentelemetry-exporter-otlp-proto-http>=1.45.0",
+    "opentelemetry-instrumentation-fastapi>=0.66b0",
+    "opentelemetry-instrumentation-httpx>=0.66b0",
+    "sentry-sdk>=2.71.0",
 ]
 
 # torch comes in via kokoro/silero-vad. Pick one: cpu (CPU-only torch, ~4 GB smaller image)

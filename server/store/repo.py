@@ -9,6 +9,7 @@ from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from server.notify import notify
 from server.store.models import ContactMessage, Cv, InterviewSession, Payment, Profile
 
 
@@ -32,6 +33,7 @@ async def profile(db: AsyncSession, uid: str) -> Profile:
     db.add(Profile(user_id=uid))
     try:
         await db.commit()
+        notify(f"New user signed up ({uid}).")
     except IntegrityError:  # created concurrently by another request
         await db.rollback()
     return await db.get(Profile, uid, populate_existing=True)

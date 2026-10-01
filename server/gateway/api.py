@@ -21,7 +21,9 @@ from server.agent.interview import cv_question_count, load_packs, plan_questions
 from server.agent.scoring import scoring_llm
 from server import billing
 from server.auth import verify_token
+from server import telemetry
 from server.config import get_settings
+from server.notify import notify
 from server.share import ShareChoices, initials, public_card, validate
 from server.storage import LocalStore, get_storage
 from server.store import repo
@@ -40,6 +42,7 @@ async def _user(authorization: str = Header("")) -> str:
     uid = await verify_token(get_settings(), authorization.removeprefix("Bearer ").strip())
     if not uid:
         raise HTTPException(401, "sign in again")
+    telemetry.identify(user_id=uid)  # logs, traces and error reports for this request carry the user
     return uid
 
 
@@ -279,6 +282,9 @@ async def webhook(request: Request, db: AsyncSession = Depends(get_db)):
             amount_total=purchase.amount_total, currency=purchase.currency, provider=purchase.provider,
         )
         logger.info("payment %s for %s: %s", purchase.session_id, purchase.user_id, "granted" if granted else "duplicate")
+        if granted:
+            amount = f"{purchase.amount_total / 100:.2f} {(purchase.currency or '').upper()}" if purchase.amount_total else "?"
+            notify(f"New purchase: {purchase.product.label}, {amount} via {purchase.provider} (user {purchase.user_id})")
     return {"ok": True}
 
 
@@ -311,4 +317,5 @@ async def contact(body: ContactForm, request: Request, authorization: str = Head
     await repo.add_contact_message(
         db, name=body.name.strip(), email=body.email.strip(), topic=body.topic, message=body.message.strip(), user_id=uid,
     )
+    notify(f"Contact form ({body.topic}) from {body.name.strip()} <{body.email.strip()}>:\n>{body.message.strip()[:1500]}")
     return {"ok": True}

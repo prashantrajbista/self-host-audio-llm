@@ -3,6 +3,7 @@ from collections.abc import AsyncIterator
 
 from server.adapters.http_client import shared_client
 from server.adapters.llm.base import Done, LLMAdapter, LLMEvent, Message, TextDelta, ToolCall
+from server.telemetry import Generation
 
 
 class OpenAICompatAdapter(LLMAdapter):
@@ -17,6 +18,29 @@ class OpenAICompatAdapter(LLMAdapter):
         self._headers = {"Authorization": f"Bearer {api_key}", "api-key": api_key} if api_key else {}
 
     async def generate_stream(
+        self, messages: list[Message], tools: list[dict] | None = None, **params
+    ) -> AsyncIterator[LLMEvent]:
+        """The request, traced as one LLM generation (server/telemetry.py)."""
+        gen = Generation(self.name, self._model, [m.to_dict() for m in messages], params, tools)
+        text, calls, usage, error = "", [], None, None
+        try:
+            async for event in self._stream(messages, tools, **params):
+                if isinstance(event, TextDelta):
+                    gen.first_token()
+                    text += event.text
+                elif isinstance(event, ToolCall):
+                    gen.first_token()
+                    calls.append({"name": event.name, "arguments": event.arguments})
+                elif isinstance(event, Done):
+                    usage = event.usage
+                yield event
+        except BaseException as e:  # incl. GeneratorExit / CancelledError: barge-in closes the stream
+            error = e
+            raise
+        finally:
+            gen.end(text, calls, usage, error)
+
+    async def _stream(
         self, messages: list[Message], tools: list[dict] | None = None, **params
     ) -> AsyncIterator[LLMEvent]:
         payload = {

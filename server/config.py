@@ -80,6 +80,24 @@ class Settings(BaseSettings):
     codec_enabled: bool = False
     device: str = "cpu"
     log_level: str = "INFO"
+    log_format: str = "text"  # "json" in production: one object per line for the log shipper
+
+    # Monitoring. Every part is off while its setting is empty. All vendor-neutral where possible, so each is
+    # swapped by changing these values (see README "Monitoring").
+    environment: str = "development"  # tags traces, errors and LLM spans
+    # optional: OpenTelemetry traces + metrics over OTLP/HTTP to any backend (Grafana Cloud, Honeycomb, ...)
+    otel_endpoint: str = ""
+    otel_headers: str = ""  # "key=value,key2=value2", e.g. Authorization=Basic ... when sending to a vendor directly
+    # LLM tracing: Langfuse's OTLP endpoint gets only the app's own spans (interviews, LLM calls)
+    langfuse_base_url: str = ""  # https://cloud.langfuse.com (EU), https://us.cloud.langfuse.com, https://jp.cloud.langfuse.com
+    langfuse_public_key: str = ""
+    langfuse_secret_key: str = ""
+    langfuse_capture_content: bool = True  # prompts and replies; False sends only timings, tokens and cost
+    sentry_dsn: str = ""  # error reports; GlitchTip takes the same DSN format
+    # notifications (server/notify.py): purchases, sign-ups, contact messages, refunds, failures
+    notify_backends: list[str] = ["slack"]
+    slack_webhook_url: str = ""  # activity channel
+    slack_alerts_webhook_url: str = ""  # critical channel; empty = the activity channel
     vad_threshold: float = 0.35  # silero speech probability cutoff, 0-1
 
     class Config:

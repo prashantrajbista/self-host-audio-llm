@@ -12,9 +12,11 @@ from server.gateway.factory import get_stt, get_tts
 from server.gateway.api import router as api_router
 from server.gateway.ws_handler import websocket_endpoint
 from server.logging_config import setup_logging
+from server import telemetry
+from server.notify import notify
 from server.vad import vad
 
-setup_logging(get_settings().log_level)
+setup_logging(get_settings().log_level, get_settings().log_format)
 
 
 @asynccontextmanager
@@ -25,6 +27,7 @@ async def lifespan(_: FastAPI):
     get_tts(settings)
     vad.preload()  # per-connection VADs copy this, so a connect never reads the model from disk
     load_packs(settings.packs_dir)  # an invalid interview pack fails the boot, not a call
+    notify(f"Gateway started ({settings.environment}).")  # several in a row = a restart loop
     yield
 
 
@@ -36,6 +39,7 @@ app.add_middleware(
     allow_headers=["Authorization", "Content-Type"],
 )
 app.include_router(api_router)
+telemetry.setup(app, get_settings())
 
 
 @app.get("/health")

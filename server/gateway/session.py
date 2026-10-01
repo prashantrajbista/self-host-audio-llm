@@ -14,6 +14,7 @@ from server.agent.conversation import Conversation
 from server.agent.loop import Filler, Prefetch, Speak, ToolFinished, ToolStarted, TurnTrace, run_turn
 from server.adapters.stt.base import STTAdapter
 from server.adapters.tts.base import TTSAdapter
+from server import telemetry
 from server.vad.vad import VAD
 
 logger = logging.getLogger(__name__)
@@ -323,7 +324,10 @@ class VoiceSession:
                 await self._log_turn("assistant", heard, self._reply_start, _wall(self._playing_until))
             logger.info("reply: %r", reply)
             trace.total_ms = self._elapsed_ms()
-            logger.info("turn trace: %s", json.dumps(asdict(trace)))
+            timings = asdict(trace)
+            logger.info("turn trace: %s", json.dumps(timings), extra={"turn": timings})
+            if trace.first_audio_ms is not None:
+                telemetry.turn_latency.record(trace.first_audio_ms)
             await self._send_json({"type": "trace", "data": asdict(trace)})
 
             if not self._interrupt.is_set():
@@ -332,6 +336,7 @@ class VoiceSession:
             logger.debug("turn cancelled (barge-in)")
         except Exception:
             logger.exception("turn failed")
+            telemetry.turn_errors.add(1)
             if speaker:
                 speaker.cancel()
             await self._send_json({"type": "error", "data": FALLBACK_LINE})

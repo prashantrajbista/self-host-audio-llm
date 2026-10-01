@@ -3,11 +3,13 @@ import json
 import logging
 import time
 import uuid
+from contextlib import nullcontext
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from fastapi import WebSocket, WebSocketDisconnect
 
+from server import context, telemetry
 from server.agent.agents import get_agent
 from server.agent.cv import summary
 from server.agent.interview import Interview, load_packs
@@ -16,6 +18,7 @@ from server.auth import verify_token
 from server.config import Settings, get_settings, resolve_voice
 from server.gateway.factory import get_llm, get_stt, get_tts
 from server.gateway.session import VoiceSession
+from server.notify import notify
 from server.store import repo
 from server.store.db import sessions
 from server.vad.vad import VAD
@@ -91,10 +94,14 @@ async def websocket_endpoint(ws: WebSocket) -> None:
         await ws.close(code=BUSY_CLOSE_CODE, reason="busy")
         return
     _active_sessions += 1
+    telemetry.active_calls.add(1)
     try:
-        await _run_session(ws, client, settings)
+        # an interview is one trace (and one Langfuse trace, its LLM calls inside); the scoring after joins it
+        with telemetry.span("interview") if sid else nullcontext():
+            await _run_session(ws, client, settings)
     finally:
         _active_sessions -= 1
+        telemetry.active_calls.add(-1)
 
 
 def _new_session(ws: WebSocket, settings: Settings, agent) -> VoiceSession:
@@ -127,6 +134,8 @@ async def _run_session(ws: WebSocket, client: str, settings: Settings) -> None:
     interview_id = ws.query_params.get("session_id")
     if interview_id:
         uid = await verify_token(settings, ws.query_params.get("token", ""))
+        telemetry.identify(session_id=interview_id, user_id=uid)
+        context.llm_call.set("interviewer")
         call = await _resume(interview_id, uid)
         opening = RESUME_LINE
         if call is None:
@@ -268,6 +277,9 @@ async def _finish_interview(settings: Settings, session_id: uuid.UUID, record: d
                 await repo.update_session(db, session_id, **ended, status="abandoned")
                 await repo.refund(db, session_id)
                 logger.info("interview %s: abandoned", session_id)
+                telemetry.interviews.add(1, {"status": "abandoned"})
+                telemetry.refunds.add(1, {"reason": "abandoned"})
+                notify(f"Refunded an interview with no answers ({session_id}).")
                 return
             await repo.update_session(db, session_id, **ended, status="scoring")
             report = await score_record(record, settings)
@@ -275,11 +287,15 @@ async def _finish_interview(settings: Settings, session_id: uuid.UUID, record: d
             if report["status"] == "scored":
                 fields |= {"overall_score": report["overall_score"], "verdict": report["verdict"]}
             await repo.update_session(db, session_id, **fields)
+            telemetry.interviews.add(1, {"status": report["status"], "completed": bool(record["completed"])})
             if report["status"] == "failed":
                 await repo.refund(db, session_id)
+                telemetry.refunds.add(1, {"reason": "scoring_failed"})
+                notify(f"Scoring failed, interview refunded ({session_id}): {report.get('error', '')}", critical=True)
         logger.info("interview %s: %s", session_id, report["status"])
     except Exception:
         logger.exception("finishing interview %s failed", session_id)
+        notify(f"Finishing interview {session_id} failed: transcript or report may be lost. See the logs.", critical=True)
 
 
 async def _watch_interview(ws: WebSocket, session: VoiceSession, interview: Interview, interview_id: str) -> None:

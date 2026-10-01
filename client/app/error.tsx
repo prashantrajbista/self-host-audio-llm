@@ -1,10 +1,14 @@
 "use client";
 
+import * as Sentry from "@sentry/nextjs";
 import { useEffect } from "react";
 import { PRIMARY, SECONDARY, STANDALONE } from "@/lib/ui";
 
 export default function Error({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
-  useEffect(() => console.error(error), [error]);
+  useEffect(() => {
+    console.error(error);
+    Sentry.captureException(error); // no-op unless Sentry is configured (instrumentation-client.ts)
+  }, [error]);
   return (
     <main className={`${STANDALONE} flex flex-col items-center justify-center px-4 text-center`}>
       <h1 className="text-xl font-semibold text-ink">Something went wrong on this page</h1>

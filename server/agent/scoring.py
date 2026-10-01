@@ -10,6 +10,7 @@ import re
 import sys
 import uuid
 
+from server import context
 from server.adapters.llm.base import LLMAdapter, Message, TextDelta
 from server.adapters.llm.openai_compat_adapter import OpenAICompatAdapter
 from server.agent.interview import LEVEL_WORDS, load_packs
@@ -124,6 +125,7 @@ def _parse_grade(text: str, names: list[str]) -> dict | None:
 
 
 async def grade_answer(llm: LLMAdapter, pack: dict, record: dict, answer: dict) -> dict | None:
+    context.llm_call.set("score_answer")
     """Rubric grade for one answer; one retry on unparseable output, then None (left unscored)."""
     names = [d["name"] for d in pack["rubric"]]
     messages = _grading_messages(pack, record, answer)

@@ -68,6 +68,7 @@ Runs one full turn (transcribe → generate reply → synthesize speech) through
 uv run python -m tests.test_session          # state machine + barge-in, fake adapters, no models
 uv run python -m tests.test_openai_audio     # OpenAI/Foundry STT+TTS adapters against a mock HTTP server
 uv run python -m tests.test_silence          # silent candidate: nudges, mute, give_time, idle end — no models
+uv run python -m tests.test_monitoring       # Langfuse LLM span shape, own-spans filter, Slack notifications — no network
 uv run python -m tests.test_resume           # dropped interview call: reconnect, takeover, hang-up, timeout — no models
 uv run python -m tests.test_agent            # agent loop, tools, confirmation, fallback, concurrency — no models
 uv run python -m tests.test_ws_integration   # real STT/LLM/TTS over an actual WebSocket
@@ -175,6 +176,26 @@ Tear everything down: `terraform -chdir=infra destroy`.
 Caddy is the only published service and load-balances (least connections) across the frontend and gateway
 containers: `GATEWAY_REPLICAS=2 FRONTEND_REPLICAS=2 docker compose -f docker-compose.prod.yml up -d`. On 4 vCPUs
 extra gateway replicas mostly compete with STT for CPU, so start with 1.
+
+## Monitoring
+
+Every part is off until its values are set in `.env.production` (and `client/.env.production` for the web app), so local development needs none of it. Each piece sits on an open standard, so swapping a vendor is a config change:
+
+| What | Tool | How it's wired | Swap by |
+|---|---|---|---|
+| LLM calls | Langfuse | the app's own OpenTelemetry spans (each interview, every LLM call with messages, reply, model, tokens) over OTLP to Langfuse | `LANGFUSE_*`; any OTLP tool that reads `gen_ai.*` attributes works with small changes in `server/telemetry.py` |
+| Errors | Sentry | `SENTRY_DSN` (gateway), `NEXT_PUBLIC_SENTRY_DSN` in `client/.env.production` (web app) | a GlitchTip DSN (same SDK) |
+| Uptime | Sentry Uptime Monitoring | set up in Sentry, no code | — |
+| Notifications | Slack | `server/notify.py`: purchases, sign-ups, contact messages, refunds, gateway starts to `SLACK_WEBHOOK_URL`; failures to `SLACK_ALERTS_WEBHOOK_URL` with `@channel` | a `_send_<name>` function + `NOTIFY_BACKENDS` |
+| Logs | `docker compose logs` | JSON lines (`LOG_FORMAT=json`) with the interview and user id on every line | ship stdout with any log agent |
+| Traces + metrics (optional) | any OTLP backend | `OTEL_ENDPOINT` / `OTEL_HEADERS`: HTTP requests, Foundry calls, active calls, turn latency, errors, outcomes, refunds | the same two values |
+
+LLM calls are named by what they are for (`interviewer`, `score_answer`, `cv_structure`, `jd_check`, `cv_questions`) and grouped per interview as a Langfuse session. `LANGFUSE_CAPTURE_CONTENT=false` keeps prompts and replies out (timings, tokens and cost only).
+
+One-time setup:
+1. **Slack**: create `#alerts` and `#activity`, then a Slack app with an incoming webhook for each; the URLs go in `SLACK_ALERTS_WEBHOOK_URL` / `SLACK_WEBHOOK_URL`.
+2. **Langfuse**: project > Settings > API keys into `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY`; `LANGFUSE_BASE_URL` is your data region's host.
+3. **Sentry**: a Python project and a Next.js project; DSNs into `SENTRY_DSN` and `client/.env.production`'s `NEXT_PUBLIC_SENTRY_DSN`. Add its Slack integration (alerts to `#alerts`) and an uptime monitor on `https://api.<domain>/health`.
 
 ## Config (`.env.local` / `.env.production`)
 

@@ -7,6 +7,7 @@ import io
 import json
 import logging
 
+from server import context
 from server.adapters.llm.base import LLMAdapter, Message, TextDelta
 from server.agent.interview import LEVEL_WORDS
 
@@ -86,6 +87,7 @@ PROFILE_SHAPE = (
 
 
 async def structure(llm: LLMAdapter, text: str) -> dict:
+    context.llm_call.set("cv_structure")
     system = (
         "You extract a structured profile from a CV for an interview coach. First decide whether the document "
         "really is a CV or resume (a person's own work history, skills or education). If it isn't, such as a job "
@@ -111,6 +113,7 @@ JD_MIN_CHARS, JD_MIN_WORDS = 200, 30
 async def check_jd(llm: LLMAdapter, text: str) -> None:
     """Reject text that isn't a job description (JDError). Fails open: if the check itself errors, the JD
     is accepted rather than blocking the user."""
+    context.llm_call.set("jd_check")
     if len(text) < JD_MIN_CHARS or len(text.split()) < JD_MIN_WORDS:
         raise JDError("That job description is too short. Paste the full job post, or leave it empty.")
     system = (
@@ -146,6 +149,7 @@ async def cv_questions(
 ) -> list[dict]:
     """Questions grounded in the CV's probe points (plus one CV-vs-JD gap question when a JD is given),
     each mapped to one of the pack's competencies. Empty on failure: the caller falls back to the bank."""
+    context.llm_call.set("cv_questions")
     if count <= 0:
         return []
     competencies = sorted({q["competency"] for q in pack["questions"]})
