@@ -38,7 +38,7 @@ jobs:
           echo "${{ secrets.VM_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
       # env files live only on the VM (copied once by hand); excluded so --delete never touches them
       - name: Copy code
-        run: rsync -az --delete --exclude '.env*' --exclude '.git' ./ "${{ secrets.VM_USER }}@${{ secrets.VM_HOST }}:/opt/app/"
+        run: rsync -az --delete --exclude '.env*' --exclude '.git' --exclude 'audios/' --exclude 'docs/' --exclude 'data/' ./ "${{ secrets.VM_USER }}@${{ secrets.VM_HOST }}:/opt/app/"
       - name: Build and restart
         run: |
           ssh "${{ secrets.VM_USER }}@${{ secrets.VM_HOST }}" \
