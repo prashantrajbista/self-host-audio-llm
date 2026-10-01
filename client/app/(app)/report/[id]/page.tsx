@@ -129,8 +129,8 @@ export default function ReportPage() {
               <button onClick={() => setShareOpen(true)} className={PRIMARY}>
                 Share result
               </button>
-              <a href="/new" className={SECONDARY}>
-                New interview
+              <a href={`/new?again=${session.id}`} className={SECONDARY}>
+                Practice again
               </a>
             </div>
           </div>

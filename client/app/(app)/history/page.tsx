@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Progress } from "@/components/Progress";
 import { LEVEL_LABEL } from "@/lib/report";
 import { gatewayFetch, useRequireAuth, type InterviewSession } from "@/lib/supabase";
 import { PAGE, PRIMARY, WIDE_CARD } from "@/lib/ui";
@@ -64,6 +65,7 @@ export default function History() {
             </a>
           </div>
         )}
+        {rows && <Progress rows={rows} />}
         <ul className="mt-6 divide-y divide-divider">
           {rows?.map((r) => (
             <li key={r.id} className="flex items-center gap-2 py-2">

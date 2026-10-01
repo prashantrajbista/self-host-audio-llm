@@ -53,9 +53,13 @@ def _session_json(s: InterviewSession, full: bool = False) -> dict:
         "interview_type": s.interview_type, "status": s.status, "overall_score": s.overall_score,
         "verdict": s.verdict, "created_at": s.created_at.isoformat(),
     }
+    if s.status == "scored" and s.report:  # for the progress view on the history page
+        out["dimensions"] = s.report.get("dimensions")
+        out["rubric"] = {d["name"]: d["description"] for d in s.report.get("rubric", [])}
     if full:
         out |= {
             "report": s.report, "has_recording": bool(s.recording_key), "jd_text": s.jd_text,
+            "cv_id": str(s.cv_id) if s.cv_id else None,
             "audio_started_at": (s.record or {}).get("audio_started_at"),
             "share": {"slug": s.share_slug if s.is_public else None, "choices": s.share_fields},
         }

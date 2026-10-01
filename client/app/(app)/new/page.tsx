@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { BuyPanel } from "@/components/BuyPanel";
 import { refreshCredits } from "@/components/AppHeader";
 import { AlertIcon, CheckIcon } from "@/components/Icons";
+import type { SessionDetail } from "@/lib/report";
 import { RETENTION_DAYS } from "@/lib/site";
 import { GatewayError, gatewayFetch, useRequireAuth, type Cv, type Profile } from "@/lib/supabase";
 import { INPUT, LABEL, PAGE, PRIMARY, SECONDARY } from "@/lib/ui";
@@ -42,6 +43,7 @@ export default function NewInterview() {
   const [consent, setConsent] = useState(false);
   const [status, setStatus] = useState<string | null>(null); // progress line while working
   const [error, setError] = useState<string | null>(null);
+  const prefilled = useRef(false); // fields copied from an earlier interview: don't override its level
 
   const uid = session?.user.id; // not the session object: it changes on every token refresh
   useEffect(() => {
@@ -53,6 +55,21 @@ export default function NewInterview() {
       })
       .catch(() => setError("Can't reach the interview server. Is the gateway running?"));
     const params = new URLSearchParams(window.location.search);
+    // "Practice again" from a report: same role, level, type, CV and job post
+    const again = params.get("again");
+    if (again) {
+      gatewayFetch<SessionDetail & { interview_type: string; cv_id: string | null; jd_text: string | null }>(`/sessions/${again}`).then(
+        (prev) => {
+          prefilled.current = true;
+          setRole(prev.role);
+          setSeniority(prev.seniority);
+          setType(prev.interview_type);
+          setJd(prev.jd_text ?? "");
+          if (prev.cv_id) setCvId(prev.cv_id);
+        },
+        () => {},
+      );
+    }
     if (params.get("buy")) setBuy({ open: true, reason: "You've used your mocks. Pick a plan to keep practising." });
     // Back from Stripe: the webhook grants the purchase, usually within seconds; watch /me until it shows.
     let timer: ReturnType<typeof setTimeout>;
@@ -77,7 +94,7 @@ export default function NewInterview() {
     }, () => {});
     gatewayFetch<Cv[]>("/cvs").then((list) => {
       setCvs(list);
-      if (list[0]) setCvId(list[0].id);
+      setCvId((cur) => (cur && list.some((c) => c.id === cur) ? cur : (list[0]?.id ?? null)));
     }, () => {});
     return () => clearTimeout(timer);
   }, [uid]);
@@ -86,7 +103,7 @@ export default function NewInterview() {
   const selectedYears = cvs.find((c) => c.id === cvId)?.cv_profile?.years_experience;
   useEffect(() => {
     const level = suggestedLevel(selectedYears);
-    if (level) setSeniority(level);
+    if (level && !prefilled.current) setSeniority(level);
   }, [cvId, selectedYears]);
 
   const run = async (label: string, work: () => Promise<void>) => {

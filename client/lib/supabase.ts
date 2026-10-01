@@ -81,4 +81,6 @@ export interface InterviewSession {
   overall_score: number | null;
   verdict: string | null;
   created_at: string;
+  dimensions?: Record<string, number> | null; // scored only: skill averages, 1-5
+  rubric?: Record<string, string>; // scored only: skill -> what it measures
 }
