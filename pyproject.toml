@@ -13,8 +13,6 @@ dependencies = [
     "uvicorn[standard]",
     "websockets",
     "silero-vad",
-    "nvidia-cublas-cu12; sys_platform == 'linux'",
-    "nvidia-cudnn-cu12; sys_platform == 'linux'",
     "onnxruntime>=1.30.0",
     "pypdf>=6.19.0",
     "python-docx>=1.2.0",
@@ -28,5 +26,24 @@ dependencies = [
     "kokoro-onnx>=0.6.1",
 ]
 
+# torch comes in via kokoro/silero-vad. Pick one: cpu (CPU-only torch, ~4 GB smaller image)
+# or gpu (CUDA torch + the cuBLAS/cuDNN libs ctranslate2 dlopen's)
+[project.optional-dependencies]
+cpu = ["torch"]
+gpu = [
+    "torch",
+    "nvidia-cublas-cu12; sys_platform == 'linux'",
+    "nvidia-cudnn-cu12; sys_platform == 'linux'",
+]
+
 [tool.uv]
 package = false
+conflicts = [[{ extra = "cpu" }, { extra = "gpu" }]]
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu", extra = "cpu" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true

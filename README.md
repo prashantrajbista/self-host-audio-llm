@@ -28,7 +28,7 @@ mic audio → STT adapter → LLM adapter → TTS adapter → speaker audio
 ## Setup
 
 ```bash
-uv sync
+uv sync --extra cpu   # --extra gpu on an NVIDIA box
 cp .env.local.example .env.local
 cp client/.env.local.example client/.env.local
 # set OPENAI_API_KEY in .env.local (LLM_BACKEND=openai by default)

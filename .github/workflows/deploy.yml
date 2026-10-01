@@ -18,7 +18,7 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
-      - run: uv sync --frozen
+      - run: uv sync --frozen --extra cpu
       # self-check scripts that run on fakes (no models, no network)
       - run: |
           for t in test_store test_interview test_agent test_markdown_strip test_session; do

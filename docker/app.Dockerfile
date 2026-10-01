@@ -5,7 +5,9 @@ WORKDIR /app
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy
 COPY pyproject.toml uv.lock .
 # cache mount: a uv.lock change only downloads the packages that changed
-RUN --mount=type=cache,target=/root/.cache/uv uv sync --frozen
+# TORCH_EXTRA: cpu (default, CPU-only torch) or gpu (docker-compose.gpu-audio.yml)
+ARG TORCH_EXTRA=cpu
+RUN --mount=type=cache,target=/root/.cache/uv uv sync --frozen --extra ${TORCH_EXTRA}
 ENV PATH="/app/.venv/bin:${PATH}"
 # ctranslate2 (faster-whisper's backend) dlopen's libcublas/libcudnn via the linker's search
 # path, not Python's — torch's pip-installed nvidia-cublas-cu12/nvidia-cudnn-cu12 wheels put

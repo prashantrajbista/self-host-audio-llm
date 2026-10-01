@@ -2,6 +2,9 @@
 # docker-compose.yml/.env already picked (openai by default). Usage:
 #   docker compose --env-file .env.local -f docker-compose.yml -f docker-compose.gpu-audio.yml up --build
 x-gpu: &gpu
+  build:
+    args:
+      TORCH_EXTRA: gpu
   deploy:
     resources:
       reservations:
