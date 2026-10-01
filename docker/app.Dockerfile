@@ -1,9 +1,11 @@
+# syntax=docker/dockerfile:1
 FROM python:3.11-slim AS base
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 WORKDIR /app
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy
 COPY pyproject.toml uv.lock .
-RUN uv sync --frozen --no-cache
+# cache mount: a uv.lock change only downloads the packages that changed
+RUN --mount=type=cache,target=/root/.cache/uv uv sync --frozen
 ENV PATH="/app/.venv/bin:${PATH}"
 # ctranslate2 (faster-whisper's backend) dlopen's libcublas/libcudnn via the linker's search
 # path, not Python's — torch's pip-installed nvidia-cublas-cu12/nvidia-cudnn-cu12 wheels put
