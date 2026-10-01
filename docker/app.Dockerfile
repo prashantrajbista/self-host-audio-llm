@@ -19,8 +19,8 @@ CMD ["uvicorn", "server.services.stt_service:app", "--host", "0.0.0.0", "--port"
 
 FROM base AS tts
 # kokoro-onnx model files (TTS_ENGINE=onnx), baked in so startup never downloads
-ADD https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.int8.onnx models/
-ADD https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin models/
+ADD --checksum=sha256:6e742170d309016e5891a994e1ce1559c702a2ccd0075e67ef7157974f6406cb https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.int8.onnx models/
+ADD --checksum=sha256:bca610b8308e8d99f32e6fe4197e7ec01679264efed0cac9140fe9c29f1fbf7d https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin models/
 EXPOSE 8002
 CMD ["uvicorn", "server.services.tts_service:app", "--host", "0.0.0.0", "--port", "8002"]
 
