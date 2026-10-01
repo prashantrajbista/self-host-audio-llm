@@ -41,6 +41,19 @@ const REPORT_POINTS = [
   "For questions about your CV: whether your answer backed up what your CV claims",
 ];
 
+// What people complain about in other interview prep tools, and where we stand. Kept generic (no product names):
+// their plans change often and a stale claim about a named product is worse than none.
+const COMPARE: { row: string; us: string; tools: string; coaches: string }[] = [
+  { row: "How you pay", us: "Once, per pack or pass", tools: "Monthly subscription", coaches: "Per session" },
+  { row: "Auto-renewal", us: "Never", tools: "Usually, often hard to cancel", coaches: "No" },
+  { row: "Follow-up questions", us: "Yes, live by voice", tools: "Often fixed question lists", coaches: "Yes" },
+  { row: "Scores what you say, not just how", us: "Yes, 5 skills per answer", tools: "Often delivery only", coaches: "Yes" },
+  { row: "Session fails or drops", us: "Reconnects, or your credit comes back", tools: "Varies", coaches: "Reschedule" },
+  { row: "Price per mock", us: "From under $2", tools: "Bundled in the plan", coaches: "$150 and up" },
+];
+
+const PRICING_PROMISES = ["One-time payment", "Nothing renews", "Failed interview? Credit back automatically"];
+
 const FAQ = [
   {
     q: "What kind of interviews can I practise?",
@@ -63,6 +76,14 @@ const FAQ = [
     a: "A microphone and a quiet room. Headphones help, so your speakers don't echo the interviewer back into your mic.",
   },
   {
+    q: "Will I be charged again later?",
+    a: "No. Every purchase is a one-time payment. There is no subscription, and the 30-day pass simply ends after 30 days without renewing.",
+  },
+  {
+    q: "What if my connection drops mid-interview?",
+    a: "The call reconnects on its own and the interviewer picks up where you left off. If it can't reconnect, your answers so far are still scored, and an interview that fails or ends before you answer anything gives its credit back automatically.",
+  },
+  {
     q: "Can I get a refund?",
     a: `No. All purchases are final, so try your ${FREE_MOCKS} free mocks first. If an interview fails or ends before you answer anything, its credit goes back to your account automatically.`,
   },
@@ -82,7 +103,7 @@ export default function Landing() {
           </p>
           <HeroActions />
           <p className="mt-4 flex items-center gap-2 text-sm text-ink-secondary">
-            <LockIcon size={16} /> {FREE_MOCKS} free mocks. No card needed. Recordings stay private.
+            <LockIcon size={16} /> {FREE_MOCKS} free mocks, no card needed. Then pay once: no subscription, no auto-renew.
           </p>
         </div>
         <figure>
@@ -150,6 +171,14 @@ export default function Landing() {
         <div className="mx-auto max-w-5xl px-4 py-16">
           <h2 className="text-[1.75rem] font-bold text-ink">Pricing</h2>
           <p className="mt-2 text-ink-secondary">One-time payments. No subscription, nothing renews.</p>
+          <ul className="mt-4 flex flex-wrap gap-2">
+            {PRICING_PROMISES.map((p) => (
+              <li key={p} className="flex items-center gap-1.5 rounded-full border border-divider px-3 py-1 text-sm text-ink">
+                <CheckIcon size={16} className="text-primary" />
+                {p}
+              </li>
+            ))}
+          </ul>
           <ul className="mt-8 grid gap-4 md:grid-cols-3">
             {PLANS.map((p) => (
               <li key={p.name} className="flex flex-col rounded-[16px] border border-divider bg-surface p-6 shadow-ambient">
@@ -188,6 +217,45 @@ export default function Landing() {
             .
           </p>
         </div>
+      </section>
+
+      <section id="compare" className="mx-auto max-w-5xl scroll-mt-20 px-4 py-16">
+        <h2 className="text-[1.75rem] font-bold text-ink">How it compares</h2>
+        <p className="mt-2 max-w-xl text-ink-secondary">
+          The usual options for interview practice, side by side. No trial that turns into a subscription.
+        </p>
+        <div className="mt-8 overflow-x-auto">
+          <table className="w-full min-w-[36rem] text-left text-[0.9375rem]">
+            <thead>
+              <tr className="border-b border-divider text-sm text-ink-secondary">
+                <th scope="col" className="py-3 pr-4 font-normal">
+                  <span className="sr-only">Feature</span>
+                </th>
+                <th scope="col" className="py-3 pr-4 font-semibold text-primary">{BRAND}</th>
+                <th scope="col" className="py-3 pr-4 font-semibold">Typical AI practice app</th>
+                <th scope="col" className="py-3 font-semibold">Human mock coach</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-divider">
+              {COMPARE.map((c) => (
+                <tr key={c.row}>
+                  <th scope="row" className="py-3 pr-4 font-semibold text-ink">{c.row}</th>
+                  <td className="py-3 pr-4 text-ink">{c.us}</td>
+                  <td className="py-3 pr-4 text-ink-secondary">{c.tools}</td>
+                  <td className="py-3 text-ink-secondary">{c.coaches}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <p className="mt-6 flex items-start gap-2 text-sm text-ink-secondary">
+          <LockIcon size={16} className="mt-0.5 shrink-0" />
+          Your CV, recordings and transcripts are never used to train AI models. Recordings are deleted after {RETENTION_DAYS}{" "}
+          days, and you can delete anything sooner.{" "}
+          <a href="/privacy" className="text-link underline">
+            Privacy policy
+          </a>
+        </p>
       </section>
 
       <section id="faq" className="mx-auto max-w-3xl scroll-mt-20 px-4 py-20">
