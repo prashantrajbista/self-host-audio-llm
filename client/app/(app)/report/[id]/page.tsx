@@ -8,7 +8,7 @@ import { gatewayFetch, useRequireAuth } from "@/lib/supabase";
 import { LEVEL_LABEL, humanize, type SessionDetail } from "@/lib/report";
 import { CARD, PAGE, PRIMARY, SECONDARY, WIDE_CARD } from "@/lib/ui";
 
-const POLL_MS = 5000; // while the interview is still being scored
+const POLL_MS = 5000; // while the interview is still being scored or its recording disguised
 const SEEK_LEAD_S = 0.3; // start a little before the line so its first word isn't clipped
 
 export default function ReportPage() {
@@ -29,7 +29,8 @@ export default function ReportPage() {
       try {
         const data = await gatewayFetch<SessionDetail>(`/sessions/${id}`);
         setSession(data);
-        if (data.status === "live" || data.status === "scoring") timer = setTimeout(load, POLL_MS);
+        const busy = data.status === "live" || data.status === "scoring" || data.recording_status === "processing";
+        if (busy) timer = setTimeout(load, POLL_MS);
       } catch {
         setMissing(true);
       }
@@ -180,10 +181,25 @@ export default function ReportPage() {
         initial={session.share}
       />
 
+      {session.recording_status === "processing" && (
+        <div className="fixed inset-x-0 bottom-0 border-t border-divider bg-surface/95 px-4 py-3 backdrop-blur">
+          <p className="mx-auto max-w-2xl text-sm text-ink-secondary" role="status">
+            Disguising your voice for the replay…
+          </p>
+        </div>
+      )}
       {audioUrl && (
         <div className="fixed inset-x-0 bottom-0 border-t border-divider bg-surface/95 px-4 py-3 backdrop-blur">
           <div className="mx-auto flex max-w-2xl items-center gap-3">
             <span className="shrink-0 text-sm font-semibold text-ink">Replay</span>
+            {session.recording_status === "ready" && (
+              <span
+                className="shrink-0 rounded-full border border-divider px-2 py-0.5 text-xs text-ink-secondary"
+                title="Your side of the call is pitch- and formant-shifted before it's stored. Your original audio isn't kept."
+              >
+                Voice disguised
+              </span>
+            )}
             <audio
               ref={audioRef}
               src={audioUrl}

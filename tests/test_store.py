@@ -6,8 +6,10 @@ import asyncio
 import hashlib
 import hmac
 import json
+import sys
 import tempfile
 import time
+import types
 import uuid
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -106,8 +108,24 @@ def test_api():
     app = FastAPI()
     app.include_router(api.router)
     app.dependency_overrides[api._user] = lambda authorization=Header(""): authorization.removeprefix("Bearer ") or "anon"
-    client = TestClient(app)
+    client = TestClient(app).__enter__()  # one event loop for the whole test: recording anonymization runs in the background
     alice, bob = {"Authorization": "Bearer alice"}, {"Authorization": "Bearer bob"}
+
+    def recording_settled(sid):
+        for _ in range(100):
+            detail = client.get(f"/sessions/{sid}", headers=alice).json()
+            if detail["recording_status"] != "processing":
+                return detail
+            time.sleep(0.05)
+        raise AssertionError("recording still processing")
+
+    # stand-in for the voice converter (no models): marks what it was given; "boom" makes it fail
+    def fake_anonymize(data):
+        if data == b"boom":
+            raise RuntimeError("conversion failed")
+        return b"anon:" + data
+
+    sys.modules["server.services.voice_anon"] = types.SimpleNamespace(anonymize_recording=fake_anonymize)
 
     assert client.get("/me", headers=alice).json() == {"credits": 2, "has_pass": False}
     async def add_cv(uid):
@@ -137,12 +155,18 @@ def test_api():
             assert await repo.charge(db, "alice", uuid.UUID(sid))
 
     asyncio.run(start())
+    boom = {"file": ("r.webm", b"boom", "audio/webm")}
+    assert client.post(f"/sessions/{sid}/recording", files=boom, headers=alice).json() == {"ok": True}
+    failed = recording_settled(sid)
+    assert failed["recording_status"] == "failed" and not failed["has_recording"], "failed conversion: no recording"
+    assert not storage._store.path(f"recordings/alice/{sid}.webm").exists(), "the original is never stored"
     assert client.post(f"/sessions/{sid}/recording", files=audio, headers=alice).json() == {"ok": True}
     assert client.get("/sessions", headers=alice).json()[0]["status"] == "live"
-    assert client.get(f"/sessions/{sid}", headers=alice).json()["has_recording"]
+    ready = recording_settled(sid)
+    assert ready["has_recording"] and ready["recording_status"] == "ready"
     assert client.get(f"/sessions/{sid}/recording-url", headers=bob).status_code == 404, "not bob's"
     played = client.get(client.get(f"/sessions/{sid}/recording-url", headers=alice).json()["url"].removeprefix("http://testserver"))
-    assert played.content == b"opus", "signed recording URL plays the upload"
+    assert played.content == b"anon:opus", "only the anonymized recording is stored and played"
 
     # soft delete: hidden everywhere, but row and file are kept
     cv2 = asyncio.run(add_cv("alice"))
@@ -165,7 +189,7 @@ def test_api():
 
     key = f"recordings/alice/{sid}.webm"
     url = asyncio.run(storage._store.signed_url(key)).removeprefix("http://testserver")
-    assert client.get(url).content == b"opus"
+    assert client.get(url).content == b"anon:opus"
     assert client.get(url.replace("sig=", "sig=0")).status_code == 404, "tampered signature"
     print("api PASS")
 

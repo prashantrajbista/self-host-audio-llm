@@ -348,8 +348,8 @@ export default function NewInterview() {
           <label className="flex items-start gap-3 text-sm text-ink">
             <input type="checkbox" required checked={consent} onChange={(e) => setConsent(e.target.checked)} className="mt-0.5 size-4 shrink-0" />
             <span>
-              Record and transcribe this interview so I can replay it and get feedback. Recordings are private to you and
-              deleted after {RETENTION_DAYS} days. <a href="/privacy" className="text-link underline">Privacy policy</a>
+              Record and transcribe this interview so I can replay it and get feedback. The replay is stored with my
+              voice disguised, private to you and deleted after {RETENTION_DAYS} days. <a href="/privacy" className="text-link underline">Privacy policy</a>
             </span>
           </label>
           {error && (

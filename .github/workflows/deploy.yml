@@ -21,7 +21,7 @@ jobs:
       - run: uv sync --frozen --extra cpu
       # self-check scripts that run on fakes (no models, no network)
       - run: |
-          for t in test_store test_anonymize test_interview test_agent test_markdown_strip test_session test_resume test_openai_audio test_silence test_monitoring; do
+          for t in test_store test_anonymize test_voice_anon test_interview test_agent test_markdown_strip test_session test_resume test_openai_audio test_silence test_monitoring; do
             uv run python -m tests.$t
           done
 

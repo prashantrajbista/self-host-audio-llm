@@ -74,12 +74,16 @@ export class Player {
     this.nextTime = this.ctx.currentTime;
   }
 
-  // Both sides of the call mixed into one stream (for MediaRecorder): the reply audio as played here,
-  // plus the mic. Mixed in this context so they share one clock.
+  // Both sides of the call in one stereo stream (for MediaRecorder): left = the mic, right = the reply audio
+  // as played here. Kept apart so the server can anonymize the candidate's voice alone; built in this context
+  // so they share one clock.
   mixWith(mic: MediaStream): MediaStream {
     const dest = this.ctx.createMediaStreamDestination();
-    this.analyser.connect(dest);
-    this.ctx.createMediaStreamSource(mic).connect(dest);
+    dest.channelCount = 2;
+    const merger = this.ctx.createChannelMerger(2);
+    this.ctx.createMediaStreamSource(mic).connect(merger, 0, 0);
+    this.analyser.connect(merger, 0, 1);
+    merger.connect(dest);
     return dest.stream;
   }
 

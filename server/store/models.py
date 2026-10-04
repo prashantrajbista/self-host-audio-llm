@@ -72,6 +72,7 @@ class InterviewSession(SoftDelete, Base):
     overall_score: Mapped[int | None]
     verdict: Mapped[str | None] = mapped_column(sa.String(32))
     recording_key: Mapped[str | None] = mapped_column(sa.String(512))
+    recording_status: Mapped[str | None] = mapped_column(sa.String(16))  # processing | ready | failed (voice disguise)
     share_slug: Mapped[str | None] = mapped_column(sa.String(32), unique=True)
     share_fields: Mapped[dict | None] = mapped_column(JSON)
     is_public: Mapped[bool] = mapped_column(default=False)

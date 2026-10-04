@@ -64,6 +64,7 @@ export interface SessionDetail {
   created_at: string;
   report: Report | null;
   has_recording: boolean;
+  recording_status: "processing" | "ready" | "failed" | null; // null: recorded before voice disguise
   audio_started_at: number | null;
   share: { slug: string | null; choices: ShareChoices | null };
   suggested_name: string;

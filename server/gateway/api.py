@@ -30,6 +30,7 @@ from server.share import ShareChoices, initials, public_card, validate
 from server.storage import LocalStore, get_storage
 from server.store import repo
 from server.store.db import get_db
+from server.store.db import sessions as db_sessions
 from server.store.models import Cv, InterviewSession
 
 logger = logging.getLogger(__name__)
@@ -62,7 +63,7 @@ def _session_json(s: InterviewSession, full: bool = False) -> dict:
         out["rubric"] = {d["name"]: d["description"] for d in s.report.get("rubric", [])}
     if full:
         out |= {
-            "report": s.report, "has_recording": bool(s.recording_key), "jd_text": s.jd_text,
+            "report": s.report, "has_recording": bool(s.recording_key), "recording_status": s.recording_status, "jd_text": s.jd_text,
             "cv_id": str(s.cv_id) if s.cv_id else None,
             "audio_started_at": (s.record or {}).get("audio_started_at"),
             "share": {"slug": s.share_slug if s.is_public else None, "choices": s.share_fields},
@@ -220,11 +221,33 @@ async def upload_recording(
     data = await file.read(MAX_RECORDING_BYTES + 1)
     if len(data) > MAX_RECORDING_BYTES:
         raise HTTPException(413, "recording too large")
-    content_type = file.content_type or "audio/webm"
-    key = f"recordings/{uid}/{session_id}.{'m4a' if 'mp4' in content_type else 'webm'}"
-    await get_storage(get_settings()).put(key, data, content_type)
-    await repo.update_session(db, session_id, recording_key=key)
+    # the original is held in memory only: what's stored is the voice-disguised version, or nothing
+    await repo.update_session(db, session_id, recording_status="processing")
+    task = asyncio.create_task(_anonymize_and_store(uid, session_id, data))
+    _background.add(task)
+    task.add_done_callback(_background.discard)
     return {"ok": True}
+
+
+_background: set[asyncio.Task] = set()  # strong refs: a bare create_task can be garbage-collected mid-run
+_voice_slot = asyncio.Semaphore(1)  # one conversion at a time: it's CPU-bound and shares the box with live calls
+
+
+async def _anonymize_and_store(uid: str, session_id: uuid.UUID, data: bytes) -> None:
+    status, key = "failed", None
+    try:
+        from server.services.voice_anon import anonymize_recording  # lazy: keeps Praat out of startup
+
+        async with _voice_slot:
+            out = await asyncio.to_thread(anonymize_recording, data)
+        key = f"recordings/{uid}/{session_id}.webm"
+        await get_storage(get_settings()).put(key, out, "audio/webm")
+        status = "ready"
+    except Exception:
+        logger.exception("interview %s: recording voice disguise failed; recording discarded", session_id)
+        key = None
+    async with db_sessions()() as db:
+        await repo.update_session(db, session_id, recording_key=key, recording_status=status)
 
 
 @router.get("/sessions/{session_id}/recording-url")
