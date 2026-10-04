@@ -1,12 +1,17 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { THEME_SCRIPT } from "@/lib/theme";
+import { BRAND, SITE_URL, TAGLINE } from "@/lib/site";
 
 export const metadata: Metadata = {
   // absolute URLs for share-card images in link previews
-  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"),
-  title: "VoiceWire Interview: practise interviews with a live AI interviewer",
-  description: "Practice interviews with a live AI interviewer and get scored feedback.",
+  metadataBase: new URL(SITE_URL),
+  title: "AI Mock Interview by Voice, Free & Private | VoiceWire",
+  description:
+    "Practice out loud with a live AI interviewer that asks about your CV and scores every answer. CV anonymized, voice disguised, no subscription.",
+  applicationName: BRAND,
+  openGraph: { type: "website", siteName: BRAND, title: BRAND, description: TAGLINE },
+  twitter: { card: "summary_large_image" },
 };
 
 export default function RootLayout({

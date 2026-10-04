@@ -25,6 +25,7 @@ export function SiteHeader() {
 const LINKS = [
   { href: "/#pricing", label: "Pricing" },
   { href: "/interview-warmup-alternative", label: "Interview Warmup alternative" },
+  { href: "/behavioral-interview-practice", label: "Behavioral interview practice" },
   { href: "/terms", label: "Terms" },
   { href: "/privacy", label: "Privacy" },
   { href: "/contact", label: "Contact" },

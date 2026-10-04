@@ -1,9 +1,10 @@
+import type { Metadata } from "next";
 import { ArrowRightIcon, CheckIcon, LockIcon, PlusIcon } from "@/components/Icons";
 import { HeroActions } from "@/components/AuthAware";
 import { InterviewPreview } from "@/components/InterviewPreview";
 import { ScaledCard } from "@/components/ScaledCard";
 import type { PublicCard } from "@/lib/share";
-import { BRAND, FREE_MOCKS, PLANS, RETENTION_DAYS } from "@/lib/site";
+import { BRAND, FREE_MOCKS, PLANS, RETENTION_DAYS, SITE_URL, TAGLINE } from "@/lib/site";
 import { PRIMARY } from "@/lib/ui";
 
 // Illustrative only (labelled as a sample on the page): what a shared result card looks like.
@@ -105,11 +106,34 @@ const FAQ = [
   },
 ];
 
+export const metadata: Metadata = { alternates: { canonical: "/" } };
+
+// Structured data so search engines can show price and FAQ rich results.
+const JSON_LD = [
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    name: BRAND,
+    url: SITE_URL,
+    description: TAGLINE,
+    applicationCategory: "EducationalApplication",
+    operatingSystem: "Web",
+    offers: PLANS.map((p) => ({ "@type": "Offer", name: p.name, price: p.price.replace("$", ""), priceCurrency: "USD" })),
+  },
+  {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    mainEntity: FAQ.map((f) => ({ "@type": "Question", name: f.q, acceptedAnswer: { "@type": "Answer", text: f.a } })),
+  },
+];
+
 export default function Landing() {
   return (
     <main>
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(JSON_LD).replace(/</g, "\\u003c") }} />
       <section className="mx-auto grid max-w-5xl items-center gap-12 px-4 pb-20 pt-10 sm:pt-16 lg:grid-cols-[1.05fr_1fr]">
         <div>
+          <p className="mb-3 text-sm font-semibold text-primary">AI mock interview, by voice</p>
           <h1 className="text-[2.75rem] font-bold leading-[1.05] tracking-[-0.02em] text-ink text-balance sm:text-6xl">
             Rehearse the interview before it counts.
           </h1>
@@ -207,7 +231,7 @@ export default function Landing() {
 
       <section id="pricing" className="scroll-mt-20">
         <div className="mx-auto max-w-5xl px-4 py-16">
-          <h2 className="text-[1.75rem] font-bold text-ink">Pricing</h2>
+          <h2 className="text-[1.75rem] font-bold text-ink">Pricing, no subscription</h2>
           <p className="mt-2 text-ink-secondary">One-time payments. No subscription, nothing renews.</p>
           <ul className="mt-4 flex flex-wrap gap-2">
             {PRICING_PROMISES.map((p) => (
@@ -289,10 +313,7 @@ export default function Landing() {
         <p className="mt-6 flex items-start gap-2 text-sm text-ink-secondary">
           <LockIcon size={16} className="mt-0.5 shrink-0" />
           Your CV, recordings and transcripts are never used to train AI models. Recordings are deleted after {RETENTION_DAYS}{" "}
-          days, and you can delete anything sooner.{" "}
-          <a href="/privacy" className="text-link underline">
-            Privacy policy
-          </a>
+          days, and you can delete anything sooner.
         </p>
       </section>
 

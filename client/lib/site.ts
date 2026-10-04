@@ -2,6 +2,8 @@
 // server/share.py BRAND and server/billing PRODUCTS must match the brand and prices.
 
 export const BRAND = "VoiceWire Interview";
+export const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
+export const TAGLINE = "Practice interviews with a live AI interviewer and get scored feedback.";
 export const OPERATOR = "VoiceWire"; // who sells the service (update to the legal entity or your legal name)
 export const JURISDICTION = "Nepal";
 export const SUPPORT_EMAIL = "hello@voicewire.tech";
