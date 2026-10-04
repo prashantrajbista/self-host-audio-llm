@@ -20,12 +20,18 @@ export default function Privacy() {
           <strong>Account:</strong> your name and email address from your Google account when you sign in with Google.
         </li>
         <li>
-          <strong>Your CV:</strong> the file you upload, the text we extract from it, and a structured summary (roles,
-          skills, achievements) we build from it.
+          <strong>Your CV, anonymized:</strong> we extract the text from the file you upload, replace your name, email,
+          phone number, address, LinkedIn, GitHub and other profile links or usernames, and ID numbers with placeholders on our own servers, and keep only that
+          anonymized text and a structured summary (roles, skills, achievements) built from it. The original file is
+          never stored. Employers, schools, job titles and dates are kept, because the interview questions come from them.
         </li>
         <li>
-          <strong>Interviews:</strong> the audio recording of each interview (both you and the interviewer), the
-          transcript, the role, level and job post you entered, and the scored report.
+          <strong>Interviews:</strong> a recording of each interview in which your side is voice-disguised (pitch and
+          formant shifted) on our own servers (your original audio is held in memory only while it is processed, and
+          never stored), the
+          transcript, the role, level and job post you entered, and the scored report. During the live interview your
+          speech is transcribed from your real voice; only the stored replay is disguised. Your words in the transcript
+          and replay are unchanged, so anything identifying you say out loud stays in them.
         </li>
         <li>
           <strong>Payments:</strong> which plan you bought, the amount and the transaction reference. Card details go
@@ -55,12 +61,16 @@ export default function Privacy() {
       <h2>Who else handles your data</h2>
       <ul>
         <li>
-          <strong>Supabase</strong>: sign-in, and private storage for CV files and recordings.
+          <strong>Supabase</strong>: sign-in.
         </li>
         <li>
-          <strong>Our AI model provider</strong>: receives your CV text, the job post and interview transcripts to run the
-          interviewer and score your answers. It processes this to give us a response and does not use it to train its
-          models under our agreement with it.
+          <strong>Microsoft Azure</strong>: hosts our servers and the private storage for voice-disguised recordings.
+        </li>
+        <li>
+          <strong>Microsoft Azure AI Foundry</strong>, our AI model provider: receives your anonymized CV text (never your
+          name or contact details), the job post and interview transcripts to run the interviewer and score your answers,
+          and your live speech audio during the interview to transcribe it and to voice the interviewer. It processes this
+          to give us a response and does not use it to train its models under our agreement with it.
         </li>
         <li>
           <strong>Paddle</strong>: our reseller and merchant of record. It handles checkout, payment, tax and invoicing
@@ -68,8 +78,9 @@ export default function Privacy() {
         </li>
       </ul>
       <p>
-        Speech recognition and the interviewer&apos;s voice run on our own servers: your raw audio is not sent to a
-        third-party speech service.
+        The recording we keep for your replay is disguised on our own servers: your side is pitch- and
+        formant-shifted so it sounds like a different voice before it is stored, and your original audio is never
+        stored or sent anywhere for that step. The disguise is not irreversible, so treat the replay as private.
       </p>
 
       <h2>What becomes public</h2>
@@ -105,7 +116,7 @@ export default function Privacy() {
 
       <h2>Security</h2>
       <p>
-        Data is sent over encrypted connections. CV files and recordings are kept in private storage that only your account
+        Data is sent over encrypted connections. Anonymized recordings are kept in private storage that only your account
         can reach through the service, and replay links expire after an hour.
       </p>
 

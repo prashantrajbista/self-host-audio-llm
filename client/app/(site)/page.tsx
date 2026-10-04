@@ -49,7 +49,23 @@ const COMPARE: { row: string; us: string; tools: string; coaches: string }[] = [
   { row: "Follow-up questions", us: "Yes, live by voice", tools: "Often fixed question lists", coaches: "Yes" },
   { row: "Scores what you say, not just how", us: "Yes, 5 skills per answer", tools: "Often delivery only", coaches: "Yes" },
   { row: "Session fails or drops", us: "Reconnects, or your credit comes back", tools: "Varies", coaches: "Reschedule" },
+  { row: "Your CV and voice", us: "CV anonymized, voice disguised", tools: "Usually stored as uploaded", coaches: "Shared with the coach" },
   { row: "Price per mock", us: "From under $2", tools: "Bundled in the plan", coaches: "$150 and up" },
+];
+
+// The two privacy claims. Keep them exactly as true as the code: server/agent/anonymize.py (CV) and
+// server/services/voice_anon.py (stored recording only; the live call is still transcribed from your real voice).
+const PRIVACY = [
+  {
+    title: "The AI never sees your name",
+    body: "Before anything reads your CV, your name, email, phone, address and LinkedIn, GitHub or other profile links and IDs are swapped for placeholders. Your experience, employers and skills stay, so the questions are still about you. The original file is never stored.",
+    sample: ["[NAME]", "[EMAIL]", "[PHONE]", "[LINK]"],
+  },
+  {
+    title: "Your replay is voice-disguised",
+    body: "Before your recording is stored, the pitch and character of your voice are shifted so it sounds like someone else. Your words, pace and tone stay, so you can still review how you came across.",
+    sample: ["Same words", "Same pace", "Different voice"],
+  },
 ];
 
 const PRICING_PROMISES = ["One-time payment", "Nothing renews", "Failed interview? Credit back automatically"];
@@ -69,7 +85,7 @@ const FAQ = [
   },
   {
     q: "Who can see my CV and recordings?",
-    a: `Only you. Nothing is public unless you choose to share a result card, and that card never includes your transcript, recording or CV. Deleted items and recordings older than ${RETENTION_DAYS} days are permanently removed.`,
+    a: `Only you, and even we don't keep the identifying parts: your CV is anonymized before the AI reads it and the original file is never stored, and your side of each recording is stored with your voice disguised. Nothing is public unless you choose to share a result card, which never includes your transcript, recording or CV. Deleted items and recordings older than ${RETENTION_DAYS} days are permanently removed.`,
   },
   {
     q: "Do I need special equipment?",
@@ -131,6 +147,28 @@ export default function Landing() {
           </ul>
         </div>
         <InterviewPreview />
+      </section>
+
+      <section id="privacy" className="mx-auto max-w-5xl scroll-mt-20 px-4 py-16">
+        <h2 className="max-w-xl text-[1.75rem] font-bold leading-tight text-ink text-balance">
+          Practise as yourself. Your name and voice stay out of it.
+        </h2>
+        <ul className="mt-8 grid gap-4 md:grid-cols-2">
+          {PRIVACY.map((p) => (
+            <li key={p.title} className="rounded-[16px] border border-divider bg-surface p-6 shadow-ambient">
+              <LockIcon size={20} className="text-primary" />
+              <h3 className="mt-3 text-lg font-semibold text-ink">{p.title}</h3>
+              <p className="mt-2 text-ink-secondary">{p.body}</p>
+              <ul className="mt-4 flex flex-wrap gap-2" aria-hidden>
+                {p.sample.map((t) => (
+                  <li key={t} className="rounded-full bg-primary/10 px-3 py-1 text-sm font-semibold text-primary">
+                    {t}
+                  </li>
+                ))}
+              </ul>
+            </li>
+          ))}
+        </ul>
       </section>
 
       <section>
