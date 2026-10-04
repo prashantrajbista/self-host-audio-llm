@@ -29,6 +29,9 @@ dependencies = [
     "opentelemetry-instrumentation-fastapi>=0.66b0",
     "opentelemetry-instrumentation-httpx>=0.66b0",
     "sentry-sdk>=2.71.0",
+    "presidio-analyzer>=2.2.362",
+    "presidio-anonymizer>=2.2.364",
+    "en-core-web-lg",
 ]
 
 # torch comes in via kokoro/silero-vad. Pick one: cpu (CPU-only torch, ~4 GB smaller image)
@@ -47,6 +50,7 @@ conflicts = [[{ extra = "cpu" }, { extra = "gpu" }]]
 
 [tool.uv.sources]
 torch = [{ index = "pytorch-cpu", extra = "cpu" }]
+en-core-web-lg = { url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_lg-3.8.0/en_core_web_lg-3.8.0-py3-none-any.whl" }
 
 [[tool.uv.index]]
 name = "pytorch-cpu"

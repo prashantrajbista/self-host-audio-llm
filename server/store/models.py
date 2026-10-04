@@ -46,7 +46,7 @@ class Cv(SoftDelete, Base):
     user_id: Mapped[str] = mapped_column(sa.String(64), index=True)
     file_name: Mapped[str] = mapped_column(sa.String(255))
     storage_key: Mapped[str | None] = mapped_column(sa.String(512))  # original file; None for pasted text
-    raw_text: Mapped[str] = mapped_column(sa.Text)
+    raw_text: Mapped[str] = mapped_column(sa.Text)  # anonymized (server.agent.anonymize) for uploads since Oct 2026
     cv_profile: Mapped[dict | None] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), default=_now)
 

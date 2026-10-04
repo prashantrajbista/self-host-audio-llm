@@ -64,6 +64,7 @@ export interface Cv {
   file_name: string;
   cv_profile: CvProfile | null;
   created_at: string;
+  anon_text?: string; // only right after upload: the anonymized text the AI works from
 }
 
 export interface Profile {

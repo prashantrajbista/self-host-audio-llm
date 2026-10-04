@@ -182,7 +182,8 @@ export default function NewInterview() {
         <ol className="mt-8 space-y-4">
           <Step n={1} title="Your CV" done={!!cvId}>
             <p className="text-sm text-ink-secondary">
-              The interviewer asks about your real experience, so questions are built from your CV.
+              The interviewer asks about your real experience, so questions are built from your CV. Your name, contact
+              details, and LinkedIn or GitHub links and IDs are removed before the AI reads it, and the original file is never stored.
             </p>
             {cvs.length > 0 && (
               <div className="mt-4 space-y-1" role="radiogroup" aria-label="Your CVs">
@@ -246,6 +247,25 @@ export default function NewInterview() {
                 )}
                 <p className="mt-3 text-xs text-ink-secondary">Looks wrong? Delete it and upload a text-based PDF or DOCX.</p>
               </div>
+            )}
+            {selected?.anon_text && (
+              <details className="mt-3 rounded-[12px] border border-divider p-4 text-sm">
+                <summary className="cursor-pointer font-semibold text-ink">What the AI sees</summary>
+                <p className="mt-2 text-xs text-ink-secondary">
+                  Your CV after anonymization. This is all that's sent to the AI and all we keep.
+                </p>
+                <pre className="mt-3 max-h-72 overflow-auto whitespace-pre-wrap font-sans text-ink-secondary">
+                  {selected.anon_text.split(/(\[[A-Z]+\])/).map((part, i) =>
+                    i % 2 ? (
+                      <mark key={i} className="rounded bg-primary/15 px-1 font-semibold text-primary">
+                        {part}
+                      </mark>
+                    ) : (
+                      part
+                    ),
+                  )}
+                </pre>
+              </details>
             )}
           </Step>
 

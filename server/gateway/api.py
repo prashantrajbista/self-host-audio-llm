@@ -3,11 +3,12 @@
 Every route touching user data resolves the caller from their access token (`_user`) and goes through
 server.store.repo, whose queries are all scoped to that user id."""
 
+import asyncio
 import logging
 import time
 import uuid
 from collections import defaultdict, deque
-from pathlib import PurePath
+from datetime import UTC, datetime
 from typing import Literal
 
 from fastapi import APIRouter, Depends, File, Header, HTTPException, Request, UploadFile
@@ -15,6 +16,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from server.agent.anonymize import anonymize_cv
 from server.agent.cv import MAX_BYTES as MAX_CV_BYTES
 from server.agent.cv import CVError, check_jd, cv_questions, extract_text, structure
 from server.agent.interview import cv_question_count, load_packs, plan_questions
@@ -33,7 +35,6 @@ from server.store.models import Cv, InterviewSession
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-CV_TYPES = {".pdf": "application/pdf", ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document", ".txt": "text/plain"}
 MAX_RECORDING_BYTES = 50 * 1024 * 1024  # ~25 min of opus is a few MB; generous headroom
 RECORDING_URL_TTL_S = 3600
 
@@ -90,15 +91,15 @@ async def upload_cv(file: UploadFile = File(...), uid: str = Depends(_user), db:
     """A CV file (PDF/DOCX/TXT) -> stored + structured profile the user can review."""
     data = await file.read(MAX_CV_BYTES + 1)
     try:
-        raw = extract_text(file.filename or "", data)
-        profile = await structure(scoring_llm(get_settings()), raw)
+        anon = await asyncio.to_thread(anonymize_cv, extract_text(file.filename or "", data))
+        profile = await structure(scoring_llm(get_settings()), anon)
     except CVError as e:
         raise HTTPException(422, str(e)) from e
-    ext = PurePath(file.filename or "").suffix.lower()
-    key = f"cvs/{uid}/{uuid.uuid4().hex}{ext}"
-    await get_storage(get_settings()).put(key, data, CV_TYPES[ext])
-    cv = await repo.add_cv(db, uid, file_name=(file.filename or "cv")[:255], storage_key=key, raw_text=raw, cv_profile=profile)
-    return _cv_json(cv)
+    # only the anonymized text is kept: the original file and its name (often the person's) are never stored
+    cv = await repo.add_cv(
+        db, uid, file_name=f"CV · {datetime.now(UTC):%d %b %Y}", storage_key=None, raw_text=anon, cv_profile=profile
+    )
+    return _cv_json(cv) | {"anon_text": anon}
 
 
 @router.delete("/cv/{cv_id}")

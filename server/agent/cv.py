@@ -79,7 +79,7 @@ async def _json_call(llm: LLMAdapter, system: str, user: str) -> dict | None:
 
 PROFILE_SHAPE = (
     '{"is_cv": true, "not_cv_reason": "if is_cv is false: what the document is instead, in a few words", '
-    '"name": "", "headline": "one line: current title and focus", "years_experience": 0, '
+    '"headline": "one line: current title and focus", "years_experience": 0, '
     '"roles": [{"company": "", "title": "", "dates": "", "achievements": ["with metrics if stated"], "skills": [""]}], '
     '"projects": [{"name": "", "summary": ""}], "education": [""], "skills": [""], '
     '"probe_points": [{"claim": "a specific claim from the CV", "why": "why an interviewer would dig into it"}]}'
