@@ -136,7 +136,7 @@ async def test_scoring():
 
     names = [r["name"] for r in pack["rubric"]]
     assert weighted_score(pack, dict.fromkeys(names, 1)) == 0 and weighted_score(pack, dict.fromkeys(names, 5)) == 100
-    assert verdict(pack, 85) == "Strong hire" and verdict(pack, 84) == "Hire" and verdict(pack, 0) == "No hire"
+    assert verdict(pack, 85) == "Strong answers" and verdict(pack, 84) == "Solid answers" and verdict(pack, 0) == "Weak answers"
 
     good = {"scores": dict.fromkeys(names, 4), "strengths": ["clear"], "improvements": ["add numbers"], "improved_answer": "I led..."}
     low = {"scores": {**dict.fromkeys(names, 3), "impact": 1}}

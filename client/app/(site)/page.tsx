@@ -11,7 +11,7 @@ import { PRIMARY } from "@/lib/ui";
 const SAMPLE: PublicCard = {
   brand: BRAND,
   score: 78,
-  verdict: "Hire",
+  verdict: "Solid answers",
   date: "2026-09-30",
   name: "AK",
   role: "Accountant",
@@ -35,7 +35,7 @@ const LIVE_POINTS = [
 ]
 
 const REPORT_POINTS = [
-  "An overall score and a hire / no-hire style verdict for the level you chose",
+  "An overall score and how strong your answers were for the level you chose",
   "Skill scores: structure, specificity, impact, reflection, relevance",
   "How you spoke: pace, filler words, answer length, response time",
   "Every answer replayable, with what worked, what to fix, and a stronger version",
@@ -69,7 +69,7 @@ const PRIVACY = [
   },
 ];
 
-const PRICING_PROMISES = ["One-time payment", "Nothing renews", "Failed interview? Credit back automatically"];
+const PRICING_PROMISES = ["One-time payment", "Nothing renews", "Technical problem? Credit back automatically"];
 
 const FAQ = [
   {
@@ -98,7 +98,7 @@ const FAQ = [
   },
   {
     q: "What if my connection drops mid-interview?",
-    a: "The call reconnects on its own and the interviewer picks up where you left off. If it can't reconnect, your answers so far are still scored, and an interview that fails or ends before you answer anything gives its credit back automatically.",
+    a: "The call reconnects on its own and the interviewer picks up where you left off. If it can't reconnect, your answers so far are still scored, and a session that breaks on our side or ends before you answer anything gives its credit back automatically.",
   },
   {
     q: "Can I get a refund?",

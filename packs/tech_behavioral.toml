@@ -151,12 +151,12 @@ weight = 0.10
 description = "Answers the question actually asked, at the right level for the role."
 anchors = { 1 = "Off-topic.", 3 = "Partly on-topic.", 5 = "Directly on point and level-appropriate." }
 
-# Overall 0-100 score thresholds, highest first.
+# Overall 0-100 score thresholds, highest first: how strong the answers were.
 [verdicts]
-"Strong hire" = 85
-"Hire" = 70
-"Lean no" = 50
-"No hire" = 0
+"Strong answers" = 85
+"Solid answers" = 70
+"Developing answers" = 50
+"Weak answers" = 0
 
 [card]
 title = "{verdict} · {score}/100"
