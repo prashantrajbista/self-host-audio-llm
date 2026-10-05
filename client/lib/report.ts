@@ -36,6 +36,11 @@ export interface Answer {
   improvements?: string[];
   improved_answer?: string;
   cv_alignment?: string;
+  // Civil Service (Success Profiles) reports only
+  element?: "behaviour" | "strength" | "experience";
+  label?: string;
+  met?: string[];
+  missed?: string[];
 }
 
 export interface Report {
@@ -52,10 +57,16 @@ export interface Report {
   top_strength?: string;
   top_fix?: string;
   error?: string;
+  mode?: "success_profiles"; // absent: the generic 0-100 report
+  average?: number; // Civil Service: mean score out of 7
+  scale?: Record<string, string>; // Civil Service: "1".."7" -> label
 }
 
 export interface SessionDetail {
   id: string;
+  pack_id: string;
+  elements: { behaviours: string[]; strengths: boolean; experience: boolean } | null;
+  interview_date: string | null;
   role: string;
   seniority: string;
   status: "created" | "live" | "scoring" | "scored" | "failed" | "abandoned";

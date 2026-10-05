@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
-import { AnswerCard, DeliveryStats, ScoreBars } from "@/components/ReportParts";
+import { AnswerCard, DeliveryStats, ElementScores, ScoreBars } from "@/components/ReportParts";
 import { SharePanel } from "@/components/SharePanel";
 import { gatewayFetch, useRequireAuth } from "@/lib/supabase";
 import { LEVEL_LABEL, humanize, type SessionDetail } from "@/lib/report";
@@ -107,41 +107,73 @@ export default function ReportPage() {
     );
   }
 
+  const civil = report.mode === "success_profiles";
   return (
     <main className={`${PAGE} pb-32`}>
-      <title>{`${report.verdict} · ${report.overall_score}/100 · VoiceWire Interview`}</title>
+      <title>{`${report.verdict} · ${civil ? `${report.average}/7` : `${report.overall_score}/100`} · VoiceWire Interview`}</title>
       <div className="mx-auto w-full max-w-2xl space-y-6">
-        <header className={WIDE_CARD}>
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <p className="text-sm text-ink-secondary">
-                {LEVEL_LABEL[session.seniority] ?? session.seniority} {session.role} ·{" "}
-                {new Date(session.created_at).toLocaleDateString()}
+        {civil ? (
+          <>
+            <header className={WIDE_CARD}>
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-sm text-ink-secondary">
+                    {session.seniority} {session.role} · Civil Service panel · {new Date(session.created_at).toLocaleDateString()}
+                  </p>
+                  <p className="mt-2 inline-block rounded-full border border-primary px-3 py-0.5 text-sm font-semibold text-primary">
+                    {report.verdict}
+                  </p>
+                  <p className="mt-3 text-ink">
+                    Average <span className="font-bold tabular-nums">{report.average} / 7</span>
+                  </p>
+                </div>
+                <a href={`/new?again=${session.id}`} className={SECONDARY}>
+                  Practice again
+                </a>
+              </div>
+              <p className="mt-4 text-sm text-ink-secondary">
+                Panels usually need 4 (acceptable) or more on every behaviour, strength and experience question. Some
+                departments accept a single 3 when the other scores are high. Check your job advert.
               </p>
-              <p className="mt-2 text-5xl font-bold text-ink tabular-nums">
-                {report.overall_score}
-                <span className="text-xl font-normal text-ink-secondary">/100</span>
-              </p>
-              <p className="mt-2 inline-block rounded-full border border-primary px-3 py-0.5 text-sm font-semibold text-primary">
-                {report.verdict}
-              </p>
+            </header>
+            <section className={WIDE_CARD}>
+              <h2 className="mb-4 text-lg font-bold text-ink">Scores at your grade</h2>
+              <ElementScores answers={report.answers} scale={report.scale} />
+            </section>
+          </>
+        ) : (
+          <header className={WIDE_CARD}>
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-sm text-ink-secondary">
+                  {LEVEL_LABEL[session.seniority] ?? session.seniority} {session.role} ·{" "}
+                  {new Date(session.created_at).toLocaleDateString()}
+                </p>
+                <p className="mt-2 text-5xl font-bold text-ink tabular-nums">
+                  {report.overall_score}
+                  <span className="text-xl font-normal text-ink-secondary">/100</span>
+                </p>
+                <p className="mt-2 inline-block rounded-full border border-primary px-3 py-0.5 text-sm font-semibold text-primary">
+                  {report.verdict}
+                </p>
+              </div>
+              <div className="flex flex-col items-end gap-2">
+                <button onClick={() => setShareOpen(true)} className={PRIMARY}>
+                  Share result
+                </button>
+                <a href={`/new?again=${session.id}`} className={SECONDARY}>
+                  Practice again
+                </a>
+              </div>
             </div>
-            <div className="flex flex-col items-end gap-2">
-              <button onClick={() => setShareOpen(true)} className={PRIMARY}>
-                Share result
-              </button>
-              <a href={`/new?again=${session.id}`} className={SECONDARY}>
-                Practice again
-              </a>
-            </div>
-          </div>
-          {report.top_strength && report.top_fix && (
-            <p className="mt-4 text-ink">
-              Your strongest area was <span className="font-semibold">{humanize(report.top_strength).toLowerCase()}</span>. Focus next on{" "}
-              <span className="font-semibold">{humanize(report.top_fix).toLowerCase()}</span>.
-            </p>
-          )}
-        </header>
+            {report.top_strength && report.top_fix && (
+              <p className="mt-4 text-ink">
+                Your strongest area was <span className="font-semibold">{humanize(report.top_strength).toLowerCase()}</span>. Focus next on{" "}
+                <span className="font-semibold">{humanize(report.top_fix).toLowerCase()}</span>.
+              </p>
+            )}
+          </header>
+        )}
 
         {report.dimensions && (
           <section className={WIDE_CARD}>
@@ -158,7 +190,7 @@ export default function ReportPage() {
         <section className="space-y-3">
           <h2 className="text-lg font-bold text-ink">Question by question</h2>
           {report.answers.map((a, i) => (
-            <AnswerCard key={a.index} answer={a} number={i + 1} defaultOpen={i === 0} playingAt={playingAt} onSeek={seek} />
+            <AnswerCard key={a.index} answer={a} number={i + 1} defaultOpen={i === 0} playingAt={playingAt} onSeek={seek} outOf={civil ? 7 : 100} />
           ))}
         </section>
 

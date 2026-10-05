@@ -8,7 +8,7 @@ import logging
 import time
 import uuid
 from collections import defaultdict, deque
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Literal
 
 from fastapi import APIRouter, Depends, File, Header, HTTPException, Request, UploadFile
@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from server.agent.anonymize import anonymize_cv
 from server.agent.cv import MAX_BYTES as MAX_CV_BYTES
 from server.agent.cv import CVError, check_jd, cv_questions, extract_text, structure
-from server.agent.interview import cv_question_count, load_packs, plan_questions
+from server.agent.interview import cv_question_count, is_success_profiles, levels, load_packs, plan_questions, plan_success_profiles
 from server.agent.scoring import scoring_llm
 from server import billing
 from server.auth import verify_token
@@ -61,10 +61,12 @@ def _session_json(s: InterviewSession, full: bool = False) -> dict:
     if s.status == "scored" and s.report:  # for the progress view on the history page
         out["dimensions"] = s.report.get("dimensions")
         out["rubric"] = {d["name"]: d["description"] for d in s.report.get("rubric", [])}
+        out["average"] = s.report.get("average")  # Civil Service reports: mean score out of 7
     if full:
         out |= {
             "report": s.report, "has_recording": bool(s.recording_key), "recording_status": s.recording_status, "jd_text": s.jd_text,
-            "cv_id": str(s.cv_id) if s.cv_id else None,
+            "cv_id": str(s.cv_id) if s.cv_id else None, "elements": s.elements,
+            "interview_date": s.interview_date.isoformat() if s.interview_date else None,
             "audio_started_at": (s.record or {}).get("audio_started_at"),
             "share": {"slug": s.share_slug if s.is_public else None, "choices": s.share_fields},
         }
@@ -73,7 +75,31 @@ def _session_json(s: InterviewSession, full: bool = False) -> dict:
 
 @router.get("/packs")
 async def packs():
-    return [{"id": p["id"], "name": p["name"]} for p in load_packs(get_settings().packs_dir).values()]
+    out = []
+    for p in load_packs(get_settings().packs_dir).values():
+        item = {"id": p["id"], "name": p["name"], "kind": p.get("kind", "generic"), "levels": list(levels(p))}
+        if is_success_profiles(p):
+            item |= {
+                "behaviours": [{"id": b["id"], "name": b["name"], "definition": b["definition"]} for b in p["behaviours"]],
+                "max_behaviours": p["flow"]["max_behaviours"],
+            }
+        out.append(item)
+    return out
+
+
+class Attribution(BaseModel):
+    landing: str = Field("", max_length=200)
+    referrer: str = Field("", max_length=200)
+    utm_source: str = Field("", max_length=100)
+    utm_medium: str = Field("", max_length=100)
+    utm_campaign: str = Field("", max_length=100)
+
+
+@router.post("/me/attribution")
+async def attribution(body: Attribution, uid: str = Depends(_user), db: AsyncSession = Depends(get_db)):
+    """Where this user first came from, captured by the browser before sign-in (first touch only)."""
+    await repo.set_attribution(db, uid, body.model_dump())
+    return {"ok": True}
 
 
 @router.get("/me")
@@ -110,20 +136,46 @@ async def delete_cv(cv_id: uuid.UUID, uid: str = Depends(_user), db: AsyncSessio
     return {"ok": True}
 
 
+class Elements(BaseModel):
+    """Civil Service interviews: what the job advert says is assessed."""
+    behaviours: list[str] = Field(min_length=1)
+    strengths: bool = False
+    experience: bool = False
+
+
 class NewSession(BaseModel):
     pack_id: str
     role: str = Field(min_length=1, max_length=80)
-    seniority: Literal["junior", "mid", "senior"]
+    seniority: str = Field(max_length=16)  # one of the pack's levels (Civil Service: the grade)
     interview_type: Literal["behavioral", "hr", "mixed"]
-    cv_id: uuid.UUID  # required: questions are grounded in the candidate's CV
+    cv_id: uuid.UUID | None = None  # required for generic packs: their questions are grounded in the CV
     jd_text: str | None = Field(None, max_length=8000)
+    elements: Elements | None = None  # required for Civil Service packs
+    interview_date: date | None = None
+
+
+def _check_setup(body: NewSession, pack: dict) -> None:
+    if body.seniority not in levels(pack):
+        raise HTTPException(422, "unknown level for this interview")
+    if not is_success_profiles(pack):
+        if not body.cv_id:
+            raise HTTPException(422, "add your CV to continue")
+        return
+    known = {b["id"] for b in pack["behaviours"]}
+    chosen = body.elements.behaviours if body.elements else []
+    if not chosen or len(set(chosen)) != len(chosen) or not set(chosen) <= known:
+        raise HTTPException(422, "pick the behaviours from the job advert")
+    if len(chosen) > pack["flow"]["max_behaviours"]:
+        raise HTTPException(422, f"pick at most {pack['flow']['max_behaviours']} behaviours")
 
 
 @router.post("/sessions")
 async def create_session(body: NewSession, uid: str = Depends(_user), db: AsyncSession = Depends(get_db)):
     """Create an interview (checks the user can pay; the credit is taken when it goes live)."""
-    if body.pack_id not in load_packs(get_settings().packs_dir):
+    pack = load_packs(get_settings().packs_dir).get(body.pack_id)
+    if not pack:
         raise HTTPException(422, "unknown interview type")
+    _check_setup(body, pack)
     jd_text = (body.jd_text or "").strip() or None
     if jd_text:
         try:
@@ -134,6 +186,7 @@ async def create_session(body: NewSession, uid: str = Depends(_user), db: AsyncS
         row = await repo.create_session(
             db, uid, pack_id=body.pack_id, role=body.role.strip(), seniority=body.seniority,
             interview_type=body.interview_type, cv_id=body.cv_id, jd_text=jd_text,
+            elements=body.elements.model_dump() if body.elements else None, interview_date=body.interview_date,
         )
     except repo.NoCredits as e:
         raise HTTPException(402, "You've used your mocks. Pick a plan to keep practising.") from e
@@ -149,6 +202,10 @@ async def prepare(session_id: uuid.UUID, uid: str = Depends(_user), db: AsyncSes
     if not row or row.status != "created":
         raise HTTPException(404, "unknown or already started interview")
     pack = load_packs(get_settings().packs_dir)[row.pack_id]
+    if is_success_profiles(pack):
+        plan = plan_success_profiles(pack, row.seniority, row.elements)
+        await repo.set_plan(db, uid, session_id, plan)
+        return {"questions": len(plan), "from_cv": 0}
     cv_qs = []
     if row.cv_id and (cv := await repo.get_cv(db, uid, row.cv_id)) and cv.cv_profile:
         cv_qs = await cv_questions(

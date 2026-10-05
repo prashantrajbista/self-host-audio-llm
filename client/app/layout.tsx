@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { FirstTouch } from "@/components/FirstTouch";
 import { THEME_SCRIPT } from "@/lib/theme";
 import { BRAND, SITE_URL, TAGLINE } from "@/lib/site";
 
@@ -14,6 +15,9 @@ export const metadata: Metadata = {
   twitter: { card: "summary_large_image" },
 };
 
+// Cloudflare Web Analytics: cookieless page views, off while the token is empty
+const CF_ANALYTICS_TOKEN = process.env.NEXT_PUBLIC_CF_ANALYTICS_TOKEN ?? "";
+
 export default function RootLayout({
   children,
 }: {
@@ -26,7 +30,17 @@ export default function RootLayout({
         {/* runs before first paint, so a saved theme never flashes the other one */}
         <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
       </head>
-      <body suppressHydrationWarning>{children}</body>
+      <body suppressHydrationWarning>
+        {children}
+        <FirstTouch />
+        {CF_ANALYTICS_TOKEN && (
+          <script
+            defer
+            src="https://static.cloudflareinsights.com/beacon.min.js"
+            data-cf-beacon={JSON.stringify({ token: CF_ANALYTICS_TOKEN })}
+          />
+        )}
+      </body>
     </html>
   );
 }

@@ -7,7 +7,7 @@ export const TAGLINE = "Practice interviews with a live AI interviewer and get s
 export const OPERATOR = "VoiceWire"; // who sells the service (update to the legal entity or your legal name)
 export const JURISDICTION = "Nepal";
 export const SUPPORT_EMAIL = "hello@voicewire.tech";
-export const LEGAL_UPDATED = "30 September 2026";
+export const LEGAL_UPDATED = "5 October 2026";
 export const FREE_MOCKS = 2;
 export const RETENTION_DAYS = 30; // deleted items and old recordings are purged after this (server/purge.py)
 

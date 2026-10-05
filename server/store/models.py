@@ -2,7 +2,7 @@
 edit here, then `uv run alembic revision --autogenerate -m "..."` and review the generated migration."""
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import JSONB
@@ -34,6 +34,8 @@ class Profile(Base):
     user_id: Mapped[str] = mapped_column(sa.String(64), primary_key=True)  # the auth provider's user id
     credits: Mapped[int] = mapped_column(default=FREE_CREDITS)
     pass_until: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True))
+    # first-touch marketing source (landing page, referrer, utm_*), set once from the browser after sign-in
+    attribution: Mapped[dict | None] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), default=_now)
 
     __table_args__ = (sa.CheckConstraint("credits >= 0", name="credits_non_negative"),)
@@ -62,6 +64,8 @@ class InterviewSession(SoftDelete, Base):
     interview_type: Mapped[str] = mapped_column(sa.String(16))
     cv_id: Mapped[uuid.UUID | None] = mapped_column(sa.ForeignKey("cvs.id", ondelete="SET NULL"))
     jd_text: Mapped[str | None] = mapped_column(sa.Text)
+    elements: Mapped[dict | None] = mapped_column(JSON)  # Civil Service: chosen behaviours, strengths, experience
+    interview_date: Mapped[date | None] = mapped_column(sa.Date)  # the candidate's real interview, when given
     plan: Mapped[list | None] = mapped_column(JSON)  # questions, set by the prepare step
     status: Mapped[str] = mapped_column(sa.String(16), default="created")
     charged: Mapped[bool] = mapped_column(default=False)  # a credit was taken (refunded on failure)

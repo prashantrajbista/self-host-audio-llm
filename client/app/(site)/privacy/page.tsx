@@ -45,6 +45,11 @@ export default function Privacy() {
           <strong>Technical data:</strong> server logs (such as IP address and errors) used to keep the service secure and
           working.
         </li>
+        <li>
+          <strong>How you found us:</strong> the page you first landed on, the website that linked you (its domain only)
+          and any campaign tag in the link, saved to your account when you sign in so we can see which pages and channels
+          work. For practice interviews you can also give the date of your real interview.
+        </li>
       </ul>
 
       <h2>Why we use it</h2>
@@ -110,8 +115,10 @@ export default function Privacy() {
 
       <h2>Cookies and storage</h2>
       <p>
-        We only use what the service needs to work: your browser stores your sign-in session. We use no advertising or
-        tracking cookies. During checkout, Paddle may set its own cookies for fraud prevention.
+        We only use what the service needs to work: your browser stores your sign-in session and, until you sign in, the
+        page you first landed on. We use no advertising or tracking cookies. We count page visits with Cloudflare Web
+        Analytics, which sets no cookies and doesn&apos;t track you across sites. During checkout, Paddle may set its own
+        cookies for fraud prevention.
       </p>
 
       <h2>Security</h2>

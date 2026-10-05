@@ -69,6 +69,48 @@ export function ScoreBars({
   );
 }
 
+// Civil Service report: one row per answer on the 1-7 scale, with the usual pass line (4) marked on the track.
+export function ElementScores({ answers, scale }: { answers: Answer[]; scale?: Record<string, string> }) {
+  const short = (score: number) => scale?.[String(score)]?.split(":")[0] ?? "";
+  return (
+    <ul className="space-y-4">
+      {answers
+        .filter((a) => a.scored && a.score !== null)
+        .map((a) => {
+          const score = a.score!;
+          return (
+            <li key={a.index}>
+              <div className="flex items-baseline justify-between gap-3">
+                <span className="font-semibold text-ink">
+                  {a.label}
+                  {score < 4 ? (
+                    <span className="ml-2 inline-flex items-center gap-1 text-xs font-semibold text-error">
+                      <AlertIcon size={14} /> Below 4
+                    </span>
+                  ) : (
+                    <span className="ml-2 inline-flex items-center gap-1 text-xs font-semibold text-primary">
+                      <CheckIcon size={14} /> 4 or more
+                    </span>
+                  )}
+                </span>
+                <span className="text-sm text-ink tabular-nums">{score} / 7</span>
+              </div>
+              <div
+                className="relative mt-1 h-2 w-full rounded-full bg-divider/60"
+                role="img"
+                aria-label={`${a.label}: ${score} out of 7, ${short(score)}`}
+              >
+                <div className="h-2 rounded-full bg-primary" style={{ width: `${(score / 7) * 100}%` }} />
+                <span className="absolute -top-1 h-4 w-0.5 bg-ink-secondary" style={{ left: `${(4 / 7) * 100}%` }} aria-hidden />
+              </div>
+              <p className="mt-1 text-xs text-ink-secondary">{short(score)}</p>
+            </li>
+          );
+        })}
+    </ul>
+  );
+}
+
 export function DeliveryStats({ delivery }: { delivery: Delivery }) {
   return (
     <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3">
@@ -105,7 +147,9 @@ export function AnswerCard({
   defaultOpen,
   playingAt,
   onSeek,
+  outOf = 100,
 }: {
+  outOf?: number;
   answer: Answer;
   number: number;
   defaultOpen: boolean;
@@ -129,13 +173,13 @@ export function AnswerCard({
       >
         <span>
           <span className="block text-xs font-semibold text-ink-secondary">
-            Question {number} · {SOURCE_LABEL[answer.source]}
+            Question {number} · {answer.label ?? SOURCE_LABEL[answer.source]}
           </span>
           <span className="mt-1 block font-semibold text-ink">{answer.question}</span>
         </span>
         <span className="shrink-0 text-lg font-bold text-ink tabular-nums">
           {answer.scored ? `${answer.score}` : "—"}
-          <span className="text-xs font-normal text-ink-secondary">{answer.scored ? "/100" : ""}</span>
+          <span className="text-xs font-normal text-ink-secondary">{answer.scored ? `/${outOf}` : ""}</span>
         </span>
       </button>
 
@@ -199,6 +243,18 @@ export function AnswerCard({
                     </span>
                   ))}
                 </p>
+              )}
+              {(!!answer.met?.length || !!answer.missed?.length) && (
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <p className="mb-1 text-sm font-semibold text-ink">Indicators you showed</p>
+                    {answer.met?.length ? bullets(answer.met) : <p className="text-sm text-ink-secondary">None clearly shown.</p>}
+                  </div>
+                  <div>
+                    <p className="mb-1 text-sm font-semibold text-ink">Indicators to bring in</p>
+                    {answer.missed?.length ? bullets(answer.missed) : <p className="text-sm text-ink-secondary">None missing.</p>}
+                  </div>
+                </div>
               )}
               <div className="grid gap-4 sm:grid-cols-2">
                 <div>

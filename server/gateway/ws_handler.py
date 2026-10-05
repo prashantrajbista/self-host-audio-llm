@@ -285,7 +285,7 @@ async def _finish_interview(settings: Settings, session_id: uuid.UUID, record: d
             report = await score_record(record, settings)
             fields = {"status": report["status"], "report": report}
             if report["status"] == "scored":
-                fields |= {"overall_score": report["overall_score"], "verdict": report["verdict"]}
+                fields |= {"overall_score": report.get("overall_score"), "verdict": report["verdict"]}
             await repo.update_session(db, session_id, **fields)
             telemetry.interviews.add(1, {"status": report["status"], "completed": bool(record["completed"])})
             if report["status"] == "failed":

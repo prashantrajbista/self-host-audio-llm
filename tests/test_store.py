@@ -139,6 +139,30 @@ def test_api():
     assert client.post("/sessions", json=body, headers=bob).status_code == 422, "can't use someone else's CV"
     assert client.post("/sessions", json=body | {"pack_id": "nope"}, headers=alice).status_code == 422
     assert client.post("/sessions", json=body | {"seniority": "cto"}, headers=alice).status_code == 422
+    packs = {p["id"]: p for p in client.get("/packs").json()}
+    assert packs["civil_service"]["levels"][:2] == ["AA", "AO"] and len(packs["civil_service"]["behaviours"]) == 9
+    cs = {"pack_id": "civil_service", "role": "Policy Adviser", "seniority": "HEO", "interview_type": "mixed",
+          "elements": {"behaviours": ["leadership", "working_together"], "strengths": True}, "interview_date": "2026-11-02"}
+    assert client.post("/sessions", json=cs | {"seniority": "mid"}, headers=alice).status_code == 422, "grades only"
+    assert client.post("/sessions", json=cs | {"elements": None}, headers=alice).status_code == 422, "behaviours required"
+    assert client.post("/sessions", json=cs | {"elements": {"behaviours": ["nope"]}}, headers=alice).status_code == 422
+    too_many = {"behaviours": [b["id"] for b in packs["civil_service"]["behaviours"]][:7]}
+    assert client.post("/sessions", json=cs | {"elements": too_many}, headers=alice).status_code == 422
+    assert client.post("/sessions", json=body | {"seniority": "HEO"}, headers=alice).status_code == 422, "no grades for generic"
+    cs_id = client.post("/sessions", json=cs, headers=alice).json()["id"]  # no CV needed
+    assert client.post(f"/sessions/{cs_id}/prepare", headers=alice).json() == {"questions": 4, "from_cv": 0}
+    detail = client.get(f"/sessions/{cs_id}", headers=alice).json()
+    assert detail["interview_date"] == "2026-11-02" and detail["elements"]["behaviours"] == ["leadership", "working_together"]
+
+    assert client.post("/me/attribution", json={"landing": "/civil-service", "utm_source": "pcs"}, headers=alice).json() == {"ok": True}
+    client.post("/me/attribution", json={"landing": "/"}, headers=alice)
+
+    async def attribution():
+        async with sessions()() as db:
+            return (await repo.profile(db, "alice")).attribution
+
+    assert asyncio.run(attribution())["landing"] == "/civil-service", "first touch wins"
+
     sid = client.post("/sessions", json=body, headers=alice).json()["id"]
 
     assert client.post(f"/sessions/{sid}/prepare", headers=bob).status_code == 404, "not bob's"

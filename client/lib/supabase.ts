@@ -25,7 +25,7 @@ export function useAuth(): Session | null | undefined {
 export function useRequireAuth(): Session | null | undefined {
   const session = useAuth();
   useEffect(() => {
-    if (session === null) window.location.assign(`/login?next=${encodeURIComponent(window.location.pathname)}`);
+    if (session === null) window.location.assign(`/login?next=${encodeURIComponent(window.location.pathname + window.location.search)}`);
   }, [session]);
   return session;
 }
@@ -84,4 +84,5 @@ export interface InterviewSession {
   created_at: string;
   dimensions?: Record<string, number> | null; // scored only: skill averages, 1-5
   rubric?: Record<string, string>; // scored only: skill -> what it measures
+  average?: number | null; // scored Civil Service interviews: mean score out of 7
 }
