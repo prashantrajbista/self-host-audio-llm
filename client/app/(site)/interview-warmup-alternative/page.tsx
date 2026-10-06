@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { LegalPage } from "@/components/LegalPage";
-import { BRAND, FREE_MOCKS } from "@/lib/site";
+import { BRAND, FREE_MOCKS, FREE_NOW, PAYMENTS } from "@/lib/site";
 import { PRIMARY } from "@/lib/ui";
 
 const DESCRIPTION =
@@ -26,7 +26,7 @@ export default function WarmupAlternative() {
       <h2>What&apos;s the same</h2>
       <ul>
         <li>You practise by speaking, not typing.</li>
-        <li>You can start for free: {FREE_MOCKS} full mock interviews, no card needed.</li>
+        <li>{PAYMENTS ? `You can start for free: ${FREE_MOCKS} full mock interviews, no card needed.` : FREE_NOW}</li>
         <li>Feedback after every answer, so you know what to work on.</li>
       </ul>
 
@@ -50,10 +50,14 @@ export default function WarmupAlternative() {
       </ul>
 
       <h2>What it costs</h2>
-      <p>
-        {FREE_MOCKS} mocks are free. After that you pay once, with no subscription and nothing that renews: see{" "}
-        <a href="/#pricing">pricing</a>.
-      </p>
+      {PAYMENTS ? (
+        <p>
+          {FREE_MOCKS} mocks are free. After that you pay once, with no subscription and nothing that renews: see{" "}
+          <a href="/#pricing">pricing</a>.
+        </p>
+      ) : (
+        <p>{FREE_NOW}</p>
+      )}
 
       <p className="mt-8">
         <a href="/new" className={`${PRIMARY} inline-block !text-white !no-underline`}>

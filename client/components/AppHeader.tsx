@@ -58,7 +58,7 @@ export function AppHeader() {
             );
           })}
         </nav>
-        {credits && (
+        {credits && profile?.payments_enabled && (
           <button
             onClick={() => setBuyOpen(true)}
             title="Your mock interviews. Buy more."
@@ -68,6 +68,12 @@ export function AppHeader() {
             {credits}
           </button>
         )}
+        {credits && !profile?.payments_enabled && (
+          <span className="flex items-center gap-1.5 rounded-full border border-divider bg-surface px-3 py-1.5 text-sm text-ink">
+            <CreditIcon size={16} className="text-primary" />
+            {credits}
+          </span>
+        )}
         <ThemeToggle />
         {session && (
           <ProfileMenu
@@ -76,7 +82,7 @@ export function AppHeader() {
           />
         )}
       </div>
-      <BuyPanel open={buyOpen} onClose={() => setBuyOpen(false)} />
+      {profile?.payments_enabled && <BuyPanel open={buyOpen} onClose={() => setBuyOpen(false)} />}
     </header>
   );
 }

@@ -4,7 +4,7 @@ import { HeroActions } from "@/components/AuthAware";
 import { InterviewPreview } from "@/components/InterviewPreview";
 import { ScaledCard } from "@/components/ScaledCard";
 import type { PublicCard } from "@/lib/share";
-import { BRAND, FREE_MOCKS, PLANS, RETENTION_DAYS, SITE_URL, TAGLINE } from "@/lib/site";
+import { BRAND, FREE_MOCKS, FREE_NOW, PAYMENTS, PLANS, RETENTION_DAYS, SITE_URL, TAGLINE } from "@/lib/site";
 import { PRIMARY } from "@/lib/ui";
 
 // Illustrative only (labelled as a sample on the page): what a shared result card looks like.
@@ -44,7 +44,7 @@ const REPORT_POINTS = [
 
 // What people complain about in other interview prep tools, and where we stand. Kept generic (no product names):
 // their plans change often and a stale claim about a named product is worse than none.
-const COMPARE: { row: string; us: string; tools: string; coaches: string }[] = [
+const ALL_COMPARE: { row: string; us: string; tools: string; coaches: string }[] = [
   { row: "How you pay", us: "Once, per pack or pass", tools: "Monthly subscription", coaches: "Per session" },
   { row: "Auto-renewal", us: "Never", tools: "Usually, often hard to cancel", coaches: "No" },
   { row: "Follow-up questions", us: "Yes, live by voice", tools: "Often fixed question lists", coaches: "Yes" },
@@ -53,6 +53,14 @@ const COMPARE: { row: string; us: string; tools: string; coaches: string }[] = [
   { row: "Your CV and voice", us: "CV anonymized, voice disguised", tools: "Usually stored as uploaded", coaches: "Shared with the coach" },
   { row: "Price per mock", us: "From under $2", tools: "Bundled in the plan", coaches: "$150 and up" },
 ];
+// payments off: the money rows collapse into one
+const MONEY_ROWS = ["How you pay", "Auto-renewal", "Price per mock"];
+const COMPARE = PAYMENTS
+  ? ALL_COMPARE
+  : [
+      { row: "Price", us: "Free for now, no card", tools: "Monthly subscription", coaches: "$150 and up per session" },
+      ...ALL_COMPARE.filter((c) => !MONEY_ROWS.includes(c.row)),
+    ];
 
 // The two privacy claims. Keep them exactly as true as the code: server/agent/anonymize.py (CV) and
 // server/services/voice_anon.py (stored recording only; the live call is still transcribed from your real voice).
@@ -71,7 +79,7 @@ const PRIVACY = [
 
 const PRICING_PROMISES = ["One-time payment", "Nothing renews", "Technical problem? Credit back automatically"];
 
-const FAQ = [
+const ALL_FAQ = [
   {
     q: "What kind of interviews can I practise?",
     a: "Behavioral and HR screening interviews for any role, from accountant to engineer. Questions come from a curated bank plus your own CV and the job post you paste, at the level you pick.",
@@ -106,6 +114,9 @@ const FAQ = [
   },
 ];
 
+// payments off: questions about charges and refunds don't apply
+const FAQ = PAYMENTS ? ALL_FAQ : ALL_FAQ.filter((f) => !["Will I be charged again later?", "Can I get a refund?"].includes(f.q));
+
 export const metadata: Metadata = { alternates: { canonical: "/" } };
 
 // Structured data so search engines can show price and FAQ rich results.
@@ -118,7 +129,9 @@ const JSON_LD = [
     description: TAGLINE,
     applicationCategory: "EducationalApplication",
     operatingSystem: "Web",
-    offers: PLANS.map((p) => ({ "@type": "Offer", name: p.name, price: p.price.replace("$", ""), priceCurrency: "USD" })),
+    offers: PAYMENTS
+      ? PLANS.map((p) => ({ "@type": "Offer", name: p.name, price: p.price.replace("$", ""), priceCurrency: "USD" }))
+      : [{ "@type": "Offer", name: "Free", price: "0", priceCurrency: "USD" }],
   },
   {
     "@context": "https://schema.org",
@@ -143,7 +156,8 @@ export default function Landing() {
           </p>
           <HeroActions />
           <p className="mt-4 flex items-center gap-2 text-sm text-ink-secondary">
-            <LockIcon size={16} /> {FREE_MOCKS} free mocks, no card needed. Then pay once: no subscription, no auto-renew.
+            <LockIcon size={16} />{" "}
+            {PAYMENTS ? `${FREE_MOCKS} free mocks, no card needed. Then pay once: no subscription, no auto-renew.` : FREE_NOW}
           </p>
         </div>
         <figure>
@@ -229,57 +243,59 @@ export default function Landing() {
         </ul>
       </section>
 
-      <section id="pricing" className="scroll-mt-20">
-        <div className="mx-auto max-w-5xl px-4 py-16">
-          <h2 className="text-[1.75rem] font-bold text-ink">Pricing, no subscription</h2>
-          <p className="mt-2 text-ink-secondary">One-time payments. No subscription, nothing renews.</p>
-          <ul className="mt-4 flex flex-wrap gap-2">
-            {PRICING_PROMISES.map((p) => (
-              <li key={p} className="flex items-center gap-1.5 rounded-full border border-divider px-3 py-1 text-sm text-ink">
-                <CheckIcon size={16} className="text-primary" />
-                {p}
-              </li>
-            ))}
-          </ul>
-          <ul className="mt-8 grid gap-4 md:grid-cols-3">
-            {PLANS.map((p) => (
-              <li key={p.name} className="flex flex-col rounded-[16px] border border-divider bg-surface p-6 shadow-ambient">
-                <h3 className="text-lg font-semibold text-ink">{p.name}</h3>
-                <p className="mt-1 text-sm text-ink-secondary">{p.summary}</p>
-                <p className="mt-6 flex items-baseline gap-2">
-                  <span className="text-4xl font-bold tracking-[-0.02em] text-ink tabular-nums">{p.price}</span>
-                  <span className="text-sm text-ink-secondary">{p.unit}</span>
-                </p>
-                <ul className="mt-6 flex-1 space-y-3">
-                  {p.features.map((f) => (
-                    <li key={f} className="flex items-start gap-2.5 text-[0.9375rem] text-ink">
-                      <CheckIcon size={18} className="mt-0.5 shrink-0 text-primary" />
-                      {f}
-                    </li>
-                  ))}
-                </ul>
-                <a
-                  href={p.price === "$0" ? "/new" : "/new?buy=1"}
-                  className={
-                    p.price === "$0"
-                      ? `${PRIMARY} mt-8 text-center`
-                      : "mt-8 rounded-full border border-divider bg-surface px-6 py-2.5 text-center text-[0.9375rem] font-semibold text-ink transition-colors hover:border-primary"
-                  }
-                >
-                  {p.cta}
-                </a>
-              </li>
-            ))}
-          </ul>
-          <p className="mt-4 text-sm text-ink-secondary">
-            Prices in USD. Taxes are calculated at checkout by our payment provider. All purchases are final; see the{" "}
-            <a href="/terms" className="text-link underline">
-              terms
-            </a>
-            .
-          </p>
-        </div>
-      </section>
+      {PAYMENTS && (
+        <section id="pricing" className="scroll-mt-20">
+          <div className="mx-auto max-w-5xl px-4 py-16">
+            <h2 className="text-[1.75rem] font-bold text-ink">Pricing, no subscription</h2>
+            <p className="mt-2 text-ink-secondary">One-time payments. No subscription, nothing renews.</p>
+            <ul className="mt-4 flex flex-wrap gap-2">
+              {PRICING_PROMISES.map((p) => (
+                <li key={p} className="flex items-center gap-1.5 rounded-full border border-divider px-3 py-1 text-sm text-ink">
+                  <CheckIcon size={16} className="text-primary" />
+                  {p}
+                </li>
+              ))}
+            </ul>
+            <ul className="mt-8 grid gap-4 md:grid-cols-3">
+              {PLANS.map((p) => (
+                <li key={p.name} className="flex flex-col rounded-[16px] border border-divider bg-surface p-6 shadow-ambient">
+                  <h3 className="text-lg font-semibold text-ink">{p.name}</h3>
+                  <p className="mt-1 text-sm text-ink-secondary">{p.summary}</p>
+                  <p className="mt-6 flex items-baseline gap-2">
+                    <span className="text-4xl font-bold tracking-[-0.02em] text-ink tabular-nums">{p.price}</span>
+                    <span className="text-sm text-ink-secondary">{p.unit}</span>
+                  </p>
+                  <ul className="mt-6 flex-1 space-y-3">
+                    {p.features.map((f) => (
+                      <li key={f} className="flex items-start gap-2.5 text-[0.9375rem] text-ink">
+                        <CheckIcon size={18} className="mt-0.5 shrink-0 text-primary" />
+                        {f}
+                      </li>
+                    ))}
+                  </ul>
+                  <a
+                    href={p.price === "$0" ? "/new" : "/new?buy=1"}
+                    className={
+                      p.price === "$0"
+                        ? `${PRIMARY} mt-8 text-center`
+                        : "mt-8 rounded-full border border-divider bg-surface px-6 py-2.5 text-center text-[0.9375rem] font-semibold text-ink transition-colors hover:border-primary"
+                    }
+                  >
+                    {p.cta}
+                  </a>
+                </li>
+              ))}
+            </ul>
+            <p className="mt-4 text-sm text-ink-secondary">
+              Prices in USD. Taxes are calculated at checkout by our payment provider. All purchases are final; see the{" "}
+              <a href="/terms" className="text-link underline">
+                terms
+              </a>
+              .
+            </p>
+          </div>
+        </section>
+      )}
 
       <section id="compare" className="mx-auto max-w-5xl scroll-mt-20 px-4 py-16">
         <h2 className="text-[1.75rem] font-bold text-ink">How it compares</h2>

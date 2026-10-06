@@ -123,7 +123,6 @@ export default function NewInterview() {
         () => {},
       );
     }
-    if (params.get("buy")) setBuy({ open: true, reason: "You've used your mocks. Pick a plan to keep practising." });
     // Back from Stripe: the webhook grants the purchase, usually within seconds; watch /me until it shows.
     let timer: ReturnType<typeof setTimeout>;
     const watchForPayment = async (before: Profile, tries: number) => {
@@ -140,6 +139,7 @@ export default function NewInterview() {
     };
     gatewayFetch<Profile>("/me").then((p) => {
       setCredits(p);
+      if (params.get("buy") && p.payments_enabled) setBuy({ open: true, reason: "You've used your mocks. Pick a plan to keep practising." });
       if (params.get("paid")) {
         setPaidNotice("Payment received. Updating your mocks…");
         timer = setTimeout(() => void watchForPayment(p, 10), 2000);

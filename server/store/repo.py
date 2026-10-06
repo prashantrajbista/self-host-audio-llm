@@ -9,6 +9,7 @@ from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from server.config import get_settings
 from server.notify import notify
 from server.store.models import ContactMessage, Cv, InterviewSession, Payment, Profile
 
@@ -51,6 +52,11 @@ def has_pass(p: Profile) -> bool:
     return bool(p.pass_until and _aware(p.pass_until) > _now())
 
 
+def unlimited(p: Profile) -> bool:
+    """Interviews cost nothing: payments are switched off, or the user has an active pass."""
+    return not get_settings().payments_enabled or has_pass(p)
+
+
 async def list_cvs(db: AsyncSession, uid: str) -> list[Cv]:
     return list(await db.scalars(
         select(Cv).where(Cv.user_id == uid, Cv.deleted_at.is_(None)).order_by(Cv.created_at.desc())
@@ -91,7 +97,7 @@ async def delete_session(db: AsyncSession, uid: str, session_id: uuid.UUID) -> b
 async def create_session(db: AsyncSession, uid: str, **fields) -> InterviewSession:
     """Checks the user can pay but doesn't charge: `charge` does, when the interview goes live."""
     p = await profile(db, uid)
-    if p.credits <= 0 and not has_pass(p):
+    if p.credits <= 0 and not unlimited(p):
         raise NoCredits
     if fields.get("cv_id") and not await get_cv(db, uid, fields["cv_id"]):
         raise ValueError("unknown CV")
@@ -141,7 +147,7 @@ async def charge(db: AsyncSession, uid: str, session_id: uuid.UUID) -> bool:
     if p is None:
         await db.rollback()
         return False
-    if not has_pass(p):
+    if not unlimited(p):
         paid = await db.execute(
             update(Profile).where(Profile.user_id == uid, Profile.credits > 0).values(credits=Profile.credits - 1)
         )

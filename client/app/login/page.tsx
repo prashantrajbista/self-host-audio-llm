@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { supabase, useAuth } from "@/lib/supabase";
-import { BRAND, FREE_MOCKS } from "@/lib/site";
+import { BRAND, FREE_MOCKS, PAYMENTS } from "@/lib/site";
 import { AlertIcon, CheckIcon, GoogleLogo, LockIcon } from "@/components/Icons";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { STANDALONE } from "@/lib/ui";
@@ -86,7 +86,7 @@ export default function Login() {
         <div className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center py-10">
           <h1 className="text-[2.125rem] font-bold leading-[1.15] text-ink">Sign in</h1>
           <p className="mt-2 text-ink-secondary">
-            New here? Signing in creates your account, with {FREE_MOCKS} free mock interviews.
+            New here? Signing in creates your account{PAYMENTS ? `, with ${FREE_MOCKS} free mock interviews.` : ". Interviews are free for now."}
           </p>
 
           <button

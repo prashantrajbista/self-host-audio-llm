@@ -69,7 +69,8 @@ export interface Cv {
 
 export interface Profile {
   credits: number;
-  has_pass: boolean;
+  has_pass: boolean; // true while payments are switched off: everyone is unlimited
+  payments_enabled: boolean;
 }
 
 export interface InterviewSession {

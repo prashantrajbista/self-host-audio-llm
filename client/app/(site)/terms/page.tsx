@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { LegalPage } from "@/components/LegalPage";
-import { BRAND, FREE_MOCKS, JURISDICTION, OPERATOR, SUPPORT_EMAIL } from "@/lib/site";
+import { BRAND, FREE_MOCKS, JURISDICTION, OPERATOR, PAYMENTS, SUPPORT_EMAIL } from "@/lib/site";
 
 export const metadata: Metadata = { title: `Terms of service · ${BRAND}` };
 
@@ -27,34 +27,43 @@ export default function Terms() {
         account. You must be at least 16 years old.
       </p>
 
-      <h2>Mock interviews, credits and passes</h2>
-      <ul>
-        <li>New accounts get {FREE_MOCKS} free mock interviews.</li>
-        <li>A credit pack gives you a set number of interviews. Credits do not expire.</li>
-        <li>A 30-day pass gives unlimited interviews for 30 days from purchase. It does not renew automatically.</li>
-        <li>
-          One interview uses one credit when it starts. If an interview can&apos;t be scored, or you leave before answering
-          anything, the credit is returned automatically.
-        </li>
-      </ul>
+      {PAYMENTS ? (
+        <>
+        <h2>Mock interviews, credits and passes</h2>
+        <ul>
+          <li>New accounts get {FREE_MOCKS} free mock interviews.</li>
+          <li>A credit pack gives you a set number of interviews. Credits do not expire.</li>
+          <li>A 30-day pass gives unlimited interviews for 30 days from purchase. It does not renew automatically.</li>
+          <li>
+            One interview uses one credit when it starts. If an interview can&apos;t be scored, or you leave before answering
+            anything, the credit is returned automatically.
+          </li>
+        </ul>
 
-      <h2>Payments</h2>
-      <p>
-        Our order process is conducted by our online reseller Paddle.com. Paddle.com is the Merchant of Record for all our
-        orders. Paddle provides all customer service inquiries and handles returns. Prices are shown before you pay, and
-        taxes are added at checkout where they apply.
-      </p>
+        <h2>Payments</h2>
+        <p>
+          Our order process is conducted by our online reseller Paddle.com. Paddle.com is the Merchant of Record for all our
+          orders. Paddle provides all customer service inquiries and handles returns. Prices are shown before you pay, and
+          taxes are added at checkout where they apply.
+        </p>
 
-      <h2>No refunds</h2>
-      <p>
-        All purchases are final and we do not offer refunds, including for unused credits or unused time on a pass, except
-        where applicable law gives you a right to one. Please use your {FREE_MOCKS} free mock interviews to decide whether the
-        service suits you before you buy.
-      </p>
-      <p>
-        This does not affect the automatic return of credits: if an interview can&apos;t be scored, or ends before you
-        answered anything, its credit goes back to your account.
-      </p>
+        <h2>No refunds</h2>
+        <p>
+          All purchases are final and we do not offer refunds, including for unused credits or unused time on a pass, except
+          where applicable law gives you a right to one. Please use your {FREE_MOCKS} free mock interviews to decide whether the
+          service suits you before you buy.
+        </p>
+        <p>
+          This does not affect the automatic return of credits: if an interview can&apos;t be scored, or ends before you
+          answered anything, its credit goes back to your account.
+        </p>
+        </>
+      ) : (
+        <>
+          <h2>Mock interviews</h2>
+          <p>Mock interviews are currently free, with no limit and no payment details needed.</p>
+        </>
+      )}
 
       <h2>Your content</h2>
       <p>

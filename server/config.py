@@ -42,6 +42,8 @@ class Settings(BaseSettings):
     files_secret: str = Field(default_factory=lambda: secrets.token_hex(32))  # signs local file URLs
     public_base_url: str = "http://localhost:8000"  # this gateway as browsers reach it (local file URLs)
     site_url: str = "http://localhost:3000"  # the web app (payment return links)
+    # off (default): every signed-in user gets unlimited interviews and buying is refused; PAYMENTS_ENABLED=true to charge
+    payments_enabled: bool = False
     # payments: "paddle" (merchant of record, works for Nepal) or "stripe"
     payment_provider: str = "paddle"
     paddle_env: str = "sandbox"  # sandbox | production (separate Paddle accounts, keys and price ids)

@@ -1,6 +1,6 @@
 import { HeaderAuthLinks } from "@/components/AuthAware";
 import { ThemeToggle } from "@/components/ThemeToggle";
-import { BRAND, OPERATOR } from "@/lib/site";
+import { BRAND, OPERATOR, PAYMENTS } from "@/lib/site";
 
 export function SiteHeader() {
   return (
@@ -9,9 +9,11 @@ export function SiteHeader() {
         {BRAND}
       </a>
       <nav aria-label="Main" className="flex items-center gap-5 text-sm">
-        <a href="/#pricing" className="text-ink-secondary hover:text-ink">
-          Pricing
-        </a>
+        {PAYMENTS && (
+          <a href="/#pricing" className="text-ink-secondary hover:text-ink">
+            Pricing
+          </a>
+        )}
         <a href="/#faq" className="hidden text-ink-secondary hover:text-ink sm:inline">
           FAQ
         </a>
@@ -23,7 +25,7 @@ export function SiteHeader() {
 }
 
 const LINKS = [
-  { href: "/#pricing", label: "Pricing" },
+  ...(PAYMENTS ? [{ href: "/#pricing", label: "Pricing" }] : []),
   { href: "/interview-warmup-alternative", label: "Interview Warmup alternative" },
   { href: "/behavioral-interview-practice", label: "Behavioral interview practice" },
   { href: "/civil-service", label: "Civil Service interview practice" },

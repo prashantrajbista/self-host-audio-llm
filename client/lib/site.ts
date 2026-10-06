@@ -9,6 +9,10 @@ export const JURISDICTION = "Nepal";
 export const SUPPORT_EMAIL = "hello@voicewire.tech";
 export const LEGAL_UPDATED = "5 October 2026";
 export const FREE_MOCKS = 2;
+// Off unless NEXT_PUBLIC_PAYMENTS_ENABLED=true (baked in at build). Must match the server's PAYMENTS_ENABLED:
+// the server decides who can start an interview; this only decides whether public pages talk about prices.
+export const PAYMENTS = process.env.NEXT_PUBLIC_PAYMENTS_ENABLED === "true";
+export const FREE_NOW = "Free for now: unlimited mock interviews, no card needed.";
 export const RETENTION_DAYS = 30; // deleted items and old recordings are purged after this (server/purge.py)
 
 export const PLANS = [

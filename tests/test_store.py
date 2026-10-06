@@ -18,6 +18,7 @@ from fastapi import FastAPI, Header
 from fastapi.testclient import TestClient
 
 import server.storage as storage
+from server.config import get_settings
 from server.gateway import api
 from server.storage import LocalStore
 from server.store import repo
@@ -25,6 +26,7 @@ from server.store.db import make_engine, sessions, use_engine
 from server.store.models import Base, ContactMessage, Cv, InterviewSession, Profile
 
 TMP = Path(tempfile.mkdtemp())
+get_settings().payments_enabled = True  # these checks cover paid mode; test_payments_off covers the default
 
 
 async def fresh_db(name: str):
@@ -82,6 +84,42 @@ async def test_credits():
     print("credits + isolation PASS")
 
 
+async def test_payments_off():
+    """The default: interviews are free and unlimited, no credit is taken, buying is refused."""
+    engine = await fresh_db("off.db")
+    get_settings().payments_enabled = False
+    try:
+        async with sessions()() as db:
+            p = await repo.profile(db, "alice")
+            p.credits = 0
+            await db.commit()
+            for _ in range(3):
+                sid = (await repo.create_session(db, "alice", **new_session_fields())).id
+                assert await repo.charge(db, "alice", sid), "starts with no credits"
+                assert not (await db.get(InterviewSession, sid, populate_existing=True)).charged
+            assert (await db.get(Profile, "alice", populate_existing=True)).credits == 0, "nothing taken"
+
+        app = FastAPI()
+        app.include_router(api.router)
+        app.dependency_overrides[api._user] = lambda: "alice"
+        client = TestClient(app)
+        assert client.get("/me").json() == {"credits": 0, "has_pass": True, "payments_enabled": False}
+        assert client.post("/billing/checkout", json={"product": "credits_5"}).status_code == 404
+
+        get_settings().payments_enabled = True
+        async with sessions()() as db:
+            try:
+                await repo.create_session(db, "alice", **new_session_fields())
+            except repo.NoCredits:
+                pass
+            else:
+                raise AssertionError("switched back on: no credits, no interview")
+    finally:
+        get_settings().payments_enabled = True
+    await engine.dispose()
+    print("payments off PASS")
+
+
 async def test_local_store():
     store = LocalStore(str(TMP / "blobs"), "secret", "http://gw")
     await store.put("cvs/u/a.txt", b"hello", "text/plain")
@@ -127,7 +165,7 @@ def test_api():
 
     sys.modules["server.services.voice_anon"] = types.SimpleNamespace(anonymize_recording=fake_anonymize)
 
-    assert client.get("/me", headers=alice).json() == {"credits": 2, "has_pass": False}
+    assert client.get("/me", headers=alice).json() == {"credits": 2, "has_pass": False, "payments_enabled": True}
     async def add_cv(uid):
         async with sessions()() as db:
             return str((await repo.add_cv(db, uid, file_name="cv.txt", raw_text="x", cv_profile=None)).id)
@@ -457,6 +495,7 @@ def test_contact():
 
 async def main():
     await test_credits()
+    await test_payments_off()
     await test_purge()
     await test_local_store()
 

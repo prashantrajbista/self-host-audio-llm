@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { LegalPage } from "@/components/LegalPage";
-import { BRAND, FREE_MOCKS } from "@/lib/site";
+import { BRAND, FREE_MOCKS, FREE_NOW, PAYMENTS } from "@/lib/site";
 import { PRIMARY } from "@/lib/ui";
 
 const DESCRIPTION =
@@ -87,10 +87,14 @@ export default function CivilServicePractice() {
       ))}
 
       <h2>What it costs</h2>
-      <p>
-        {FREE_MOCKS} mocks are free, no card needed. After that you pay once, with no subscription and nothing that renews:
-        see <a href="/#pricing">pricing</a>.
-      </p>
+      {PAYMENTS ? (
+        <p>
+          {FREE_MOCKS} mocks are free, no card needed. After that you pay once, with no subscription and nothing that renews:
+          see <a href="/#pricing">pricing</a>.
+        </p>
+      ) : (
+        <p>{FREE_NOW}</p>
+      )}
 
       <p className="mt-8">
         <a href="/new?pack=civil_service" className={`${PRIMARY} inline-block !text-white !no-underline`}>

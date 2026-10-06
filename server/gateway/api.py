@@ -105,7 +105,7 @@ async def attribution(body: Attribution, uid: str = Depends(_user), db: AsyncSes
 @router.get("/me")
 async def me(uid: str = Depends(_user), db: AsyncSession = Depends(get_db)):
     p = await repo.profile(db, uid)
-    return {"credits": p.credits, "has_pass": repo.has_pass(p)}
+    return {"credits": p.credits, "has_pass": repo.unlimited(p), "payments_enabled": get_settings().payments_enabled}
 
 
 @router.get("/cvs")
@@ -339,6 +339,8 @@ class CheckoutRequest(BaseModel):
 
 @router.post("/billing/checkout")
 async def checkout(body: CheckoutRequest, uid: str = Depends(_user)):
+    if not get_settings().payments_enabled:
+        raise HTTPException(404, "Payments are switched off: interviews are free.")
     product = billing.PRODUCTS.get(body.product)
     if not product:
         raise HTTPException(422, "unknown product")
