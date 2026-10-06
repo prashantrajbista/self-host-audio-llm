@@ -17,3 +17,7 @@ data/
 infra/.terraform/
 infra/*.tfstate*
 infra/terraform.tfvars
+
+brag-output
+.agents
+skills-lock.json
