@@ -2,7 +2,7 @@
 # point at the VM before first start. Upstreams are resolved from Docker's DNS, so scaling a service
 # (`--scale gateway=2`) adds it to the pool without editing this file.
 
-interview.voicewire.tech {
+example.com {
 	encode zstd gzip
 	reverse_proxy {
 		dynamic a frontend 3000 {
@@ -14,7 +14,7 @@ interview.voicewire.tech {
 	}
 }
 
-api.interview.voicewire.tech {
+api.example.com {
 	# /ws calls stay on one replica for their lifetime; least_conn spreads new calls by open connections
 	reverse_proxy {
 		dynamic a gateway 8000 {
