@@ -1,96 +1,72 @@
-# Low-Latency Streaming Voice Agent (STT → LLM → TTS)
+# VoiceWire Interview
 
-Full-duplex streaming voice pipeline — Whisper (STT) → LLM (OpenAI, self-hosted Ollama/vLLM optional) → Kokoro/Piper (TTS) — STT/TTS built and served from scratch, LLM swappable via adapter.
+Open-source AI mock interviewer that works entirely by voice. It reads your CV, asks about your real experience,
+follows up when an answer is vague, lets you interrupt it mid-sentence, then scores every answer.
 
-See [voice-ai-project.md](voice-ai-project.md) for motivation/CV context and [PLAN.md](PLAN.md) for the full build plan.
+Demo: https://youtu.be/jfJdfxSZwt4
+
+Under the hood it is a full-duplex streaming voice pipeline (STT → LLM → TTS with barge-in) that you can run on your
+own hardware: speech-to-text and text-to-speech are served locally, and the LLM is swappable between OpenAI and a
+self-hosted Ollama or vLLM through the env file alone.
+
+## Features
+
+- **Voice interview**: real-time conversation with VAD-driven barge-in; take a moment to think, skip, or stop anytime.
+- **Questions from your CV**: CV-grounded and job-post gap questions, plus a bank of behavioral and HR questions.
+- **Scored report**: every answer graded against a rubric, five skill scores, delivery stats (pace, fillers, talk ratio)
+  and an improved version of each answer.
+- **Privacy first**: the CV is anonymized (name, contact details, profile links, IDs) before any model sees it, and
+  stored replays use a disguised voice.
+- **Replay and share**: replay the interview with a transcript, or share a result card showing only what you pick.
+- **Interview packs**: a pack (`packs/*.toml`) is data only: persona, question bank, flow limits, rubric. Add a niche by
+  adding a file.
 
 ## Architecture
 
-Every stage (STT/LLM/TTS/Codec) sits behind an adapter interface, swappable via the env file alone — no code changes to switch backends or move from a local Mac to a rented GPU box.
-
 ```
 mic audio → STT adapter → LLM adapter → TTS adapter → speaker audio
-             (faster-whisper)  (OpenAI/Ollama/vLLM)   (Kokoro/Piper)
+            (faster-whisper)  (OpenAI/Ollama/vLLM)   (Kokoro)
 ```
 
-## Status
+Every stage sits behind an adapter interface, so switching backends, or moving from a laptop to a GPU box, needs no
+code changes. The server is FastAPI + WebSocket (`server/`), the web app is Next.js (`client/`), and data lives in
+SQLite locally or Postgres in production.
 
-- [x] Phase 0 — adapter interfaces, config, Docker stubs
-- [x] Phase 1 — core pipeline working end-to-end locally (non-streaming)
-- [x] Phase 2 — full-duplex streaming + interactive orb frontend (server verified end-to-end; browser mic UI untested manually)
-- [x] Phase 3 — Dockerize (per-service containers + compose)
-- [x] Phase 4 — GPU + vLLM swap (compose override written + validated; untested on real GPU hardware)
-- [x] Phase 5 — GPU profiling/optimization (tooling written; `latency_bench` verified against live server, `gpu_util_log`/`profile_llm_torch` need real GPU hardware to run)
-- [x] Agentic core — conversation memory, tool calling, agent loop, LLM fallback ([docs/agentic_module.md](docs/agentic_module.md))
-- [ ] Phase 6 — Encodec integration
-- [ ] Phase 7 — Eval framework (WER, latency, NISQA, throughput)
+## Quickstart
 
-## Setup
+Needs Python 3.11+, [uv](https://docs.astral.sh/uv/), Node 20+ and a [Supabase](https://supabase.com) project for
+sign-in (the free tier is enough).
 
 ```bash
-uv sync --extra cpu   # --extra gpu on an NVIDIA box
-cp .env.local.example .env.local
-cp client/.env.local.example client/.env.local
-# set OPENAI_API_KEY in .env.local (LLM_BACKEND=openai by default)
-
-# to use a self-hosted LLM instead, set LLM_BACKEND=ollama or vllm in .env.local, then:
-# ollama serve &
-# ollama pull llama3.2   # or whichever LLM_MODEL is set in .env.local
+uv sync --extra cpu                     # --extra gpu on an NVIDIA box
+cp .env.local.example .env.local        # set OPENAI_API_KEY and SUPABASE_*
+cp client/.env.local.example client/.env.local   # set NEXT_PUBLIC_SUPABASE_*
+uv run alembic upgrade head             # creates the SQLite database at data/app.db
+uv run uvicorn server.main:app --reload # gateway on :8000
+cd client && npm install && npm run dev # web app on :3000
 ```
 
-## Interview coach (accounts, CVs, scoring)
+Open http://localhost:3000, sign in, upload a CV and start an interview.
 
-```bash
-uv run alembic upgrade head          # create/upgrade the database (SQLite at data/app.db by default)
-uv run python -m tests.test_interview
-uv run python -m tests.test_store
-```
+To run without any paid API, use a local LLM: set `LLM_BACKEND=ollama`, `LLM_ENDPOINT=http://localhost:11434` and
+`LLM_MODEL=llama3.2` in `.env.local`, then `ollama serve` and `ollama pull llama3.2`. STT (faster-whisper) and TTS
+(Kokoro) already run locally by default.
 
-- `DATABASE_URL`: `sqlite+aiosqlite:///data/app.db` locally, `postgresql+asyncpg://...` in production. Schema changes: edit `server/store/models.py`, then `uv run alembic revision --autogenerate -m "..."` and review the file.
-- Auth: Supabase Auth (`SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`); the client needs the same two as `NEXT_PUBLIC_*` in `client/.env.local`.
-- Files: `STORAGE_BACKEND=local` (disk, `data/blobs`) or `supabase` (private bucket `STORAGE_BUCKET`, needs `SUPABASE_SERVICE_ROLE_KEY`).
-- Scoring model: `SCORING_ENDPOINT` / `SCORING_MODEL` / `SCORING_API_KEY` (defaults to the conversation LLM).
-- Flow: `/login` → `/new` → `/interview/<id>` → `/history`.
-- Retention: run `uv run python -m server.purge` daily (cron). It permanently removes items deleted over 30 days ago and recordings older than 30 days, as the privacy policy states.
-- Legal pages (`/terms`, `/privacy`, `/refunds`, `/contact`) read their facts from `client/lib/site.ts`; they are templates to have reviewed before launch.
-
-## Run the Phase 1 check
-
-```bash
-uv run python -m tests.test_turn /path/to/sample.wav
-```
-
-Runs one full turn (transcribe → generate reply → synthesize speech) through `VoiceSession` with whichever backends `.env.local` selects, and asserts each stage produced output.
-
-## Run the Phase 2 checks
-
-```bash
-uv run python -m tests.test_session          # state machine + barge-in, fake adapters, no models
-uv run python -m tests.test_openai_audio     # OpenAI/Foundry STT+TTS adapters against a mock HTTP server
-uv run python -m tests.test_silence          # silent candidate: nudges, mute, give_time, idle end — no models
-uv run python -m tests.test_monitoring       # Langfuse LLM span shape, own-spans filter, Slack notifications — no network
-uv run python -m tests.test_resume           # dropped interview call: reconnect, takeover, hang-up, timeout — no models
-uv run python -m tests.test_agent            # agent loop, tools, confirmation, fallback, concurrency — no models
-uv run python -m tests.test_ws_integration   # real STT/LLM/TTS over an actual WebSocket
-uv run uvicorn server.main:app --reload      # then open http://localhost:8000 in a browser
-```
-
-## Run with Docker (Phase 3)
+## Run with Docker
 
 ```bash
 docker compose --env-file .env.local up --build
 ```
 
-Brings up `gateway`, `stt`, `tts`, `frontend` — visit `http://localhost` (Next.js client, connects directly to the gateway's `/ws` on port 8000). LLM defaults to OpenAI (needs `OPENAI_API_KEY` in `.env.local`).
-
-To use self-hosted Ollama instead, set `LLM_BACKEND=ollama` and `LLM_ENDPOINT=http://llm:11434` in `.env.local` — the compose file still defines the `llm` (Ollama) service, it's just not started by default. Bring it up explicitly and pull a model:
+Brings up `gateway`, `stt`, `tts` and `frontend`; visit http://localhost. For self-hosted Ollama set
+`LLM_BACKEND=ollama` and `LLM_ENDPOINT=http://llm:11434`, then:
 
 ```bash
 docker compose --env-file .env.local up --build llm
 docker compose exec llm ollama pull llama3.2
 ```
 
-## Run on a rented GPU with vLLM (Phase 4)
+## Run on a rented GPU with vLLM
 
 ```bash
 docker compose --env-file .env.local -f docker-compose.yml -f docker-compose.gpu.yml up --build
@@ -98,7 +74,7 @@ docker compose --env-file .env.local -f docker-compose.yml -f docker-compose.gpu
 
 Same stack, but `llm` becomes `vllm/vllm-openai` with a GPU reservation instead of Ollama — no other service changes. Needs `nvidia-container-toolkit` on the host. Model is set via `VLLM_MODEL` (default `Qwen/Qwen2.5-1.5B-Instruct`, an open/ungated HF model — swap for whatever fits your GPU's memory).
 
-## Run the Phase 5 profiling tools
+## Profiling (GPU)
 
 ```bash
 # latency benchmark — real network WS against a running gateway, p50/p95 per stage
@@ -120,62 +96,40 @@ command for that machine rather than assuming one apt package name across versio
 
 Optimization order to try, cheapest first: quantization (`--quantization awq`/`fp8`) → `--max-num-seqs` tuning → `--enable-prefix-caching`. Capture `latency_bench` + `gpu_util_log` before and after each change.
 
-## Deploy to production (one CPU-only Azure VM)
+## Deploy (one CPU-only Azure VM)
 
-Two env profiles: `.env.local` (sqlite, Paddle sandbox, local disk storage, `tiny.en`) is read by default;
-`.env.production` (Postgres, Paddle live, Azure Blob, `small.en`) is loaded by `docker-compose.prod.yml`.
-`ENV_FILE=<path>` picks any other file. The client has the same pair (`client/.env.local`, `client/.env.production`);
-`NEXT_PUBLIC_*` values are baked in by `next build`, so rebuild the frontend after changing them.
-
-Large Whisper models are too slow on CPU for live calls, so production stays on `small.en` (`base.en` if
-latency is still high). Kokoro has only one size (82M).
-
-Azure resources are defined in `infra/` (Terraform): VM (`Standard_D4as_v5`, 4 vCPU / 16GB, Docker via
-cloud-init), static IP, NSG (22/80/443), Postgres Flexible Server (`B_Standard_B2s`, 4GB), a storage account with a
-private container, and a monthly budget alert. GitHub Actions (`.github/workflows/deploy.yml`) tests and deploys
-every push to `interview-coach`: rsync to `/opt/app` on the VM, then `docker compose up -d --build`.
+`infra/` holds Terraform for a small production setup: VM (`Standard_D4as_v5`, Docker via cloud-init), static IP,
+NSG (22/80/443), Postgres Flexible Server, a storage account with a private container, Azure OpenAI deployments and a
+monthly budget alert. Production reads `.env.production` (Postgres, Azure Blob, `small.en` Whisper) through
+`docker-compose.prod.yml`; Caddy (`docker/Caddyfile`, replace `example.com` with your domain) terminates TLS and
+load-balances the frontend and gateway.
 
 ```bash
-# once: tools, login, SSH keys (yours + a separate one for GitHub Actions)
-brew install azure-cli hashicorp/tap/terraform
-az login
+brew install azure-cli hashicorp/tap/terraform && az login
 export ARM_SUBSCRIPTION_ID=$(az account show --query id -o tsv)
-ssh-keygen -t ed25519 -f ~/.ssh/interview_vm -C "me@interview-vm"
-ssh-keygen -t ed25519 -f ~/.ssh/interview_deploy -C "github-actions@interview-vm" -N ""
+ssh-keygen -t ed25519 -f ~/.ssh/interview_vm
 
-# provision
 cp infra/terraform.tfvars.example infra/terraform.tfvars   # fill in budget_email
-terraform -chdir=infra init
-terraform -chdir=infra plan
-terraform -chdir=infra apply
+terraform -chdir=infra init && terraform -chdir=infra apply
 VM=$(terraform -chdir=infra output -raw vm_ip)
-ssh -i ~/.ssh/interview_vm azureuser@$VM cloud-init status --wait   # Docker install finishes (~3 min)
+ssh -i ~/.ssh/interview_vm azureuser@$VM cloud-init status --wait
 
-# env files -> VM (only place they live); DATABASE_URL + storage connection string come from Terraform
-cp .env.production.example .env.production                 # fill in your own secrets
+cp .env.production.example .env.production                 # fill in
 cp client/.env.production.example client/.env.production   # fill in
 { cat .env.production; terraform -chdir=infra output -raw azure_env; } > .env.production.vm
+rsync -az --exclude '.env*' --exclude .git --exclude data/ ./ azureuser@$VM:/opt/app/
 scp -i ~/.ssh/interview_vm .env.production.vm azureuser@$VM:/opt/app/.env.production
 scp -i ~/.ssh/interview_vm client/.env.production azureuser@$VM:/opt/app/client/.env.production
 rm .env.production.vm
-
-# GitHub Actions secrets
-gh secret set VM_HOST --body "$VM"
-gh secret set VM_USER --body azureuser
-gh secret set VM_SSH_KEY < ~/.ssh/interview_deploy
-ssh-keyscan -t ed25519 $VM | gh secret set VM_KNOWN_HOSTS
-
-# deploy: push to interview-coach (or run the workflow by hand)
-gh workflow run deploy --ref interview-coach
+ssh -i ~/.ssh/interview_vm azureuser@$VM "cd /opt/app && docker compose -f docker-compose.prod.yml up -d --build"
 ```
 
-Then point the DNS A records for `interview.voicewire.tech` and `api.interview.voicewire.tech` at `$VM`; Caddy gets
-TLS certificates once they resolve. Paddle live webhook: `https://api.interview.voicewire.tech/billing/webhook`.
-Tear everything down: `terraform -chdir=infra destroy`.
+Point your domain's DNS A records at `$VM`; Caddy gets TLS certificates once they resolve. Tear everything down with
+`terraform -chdir=infra destroy`.
 
-Caddy is the only published service and load-balances (least connections) across the frontend and gateway
-containers: `GATEWAY_REPLICAS=2 FRONTEND_REPLICAS=2 docker compose -f docker-compose.prod.yml up -d`. On 4 vCPUs
-extra gateway replicas mostly compete with STT for CPU, so start with 1.
+Before going live, set `NEXT_PUBLIC_OPERATOR`, `NEXT_PUBLIC_JURISDICTION` and `NEXT_PUBLIC_SUPPORT_EMAIL` and review
+the privacy and terms pages (`client/app/(site)/`): they are templates. Run `uv run python -m server.purge` daily
+(cron): it removes deleted items and recordings older than 30 days, as the privacy page states.
 
 ## Monitoring
 
@@ -186,9 +140,9 @@ Every part is off until its values are set in `.env.production` (and `client/.en
 | LLM calls | Langfuse | the app's own OpenTelemetry spans (each interview, every LLM call with messages, reply, model, tokens) over OTLP to Langfuse | `LANGFUSE_*`; any OTLP tool that reads `gen_ai.*` attributes works with small changes in `server/telemetry.py` |
 | Errors | Sentry | `SENTRY_DSN` (gateway), `NEXT_PUBLIC_SENTRY_DSN` in `client/.env.production` (web app) | a GlitchTip DSN (same SDK) |
 | Uptime | Sentry Uptime Monitoring | set up in Sentry, no code | — |
-| Notifications | Slack | `server/notify.py`: purchases, sign-ups, contact messages, refunds, gateway starts to `SLACK_WEBHOOK_URL`; failures to `SLACK_ALERTS_WEBHOOK_URL` with `@channel` | a `_send_<name>` function + `NOTIFY_BACKENDS` |
+| Notifications | Slack | `server/notify.py`: sign-ups, contact messages, gateway starts to `SLACK_WEBHOOK_URL`; failures to `SLACK_ALERTS_WEBHOOK_URL` with `@channel` | a `_send_<name>` function + `NOTIFY_BACKENDS` |
 | Logs | `docker compose logs` | JSON lines (`LOG_FORMAT=json`) with the interview and user id on every line | ship stdout with any log agent |
-| Traces + metrics (optional) | any OTLP backend | `OTEL_ENDPOINT` / `OTEL_HEADERS`: HTTP requests, Foundry calls, active calls, turn latency, errors, outcomes, refunds | the same two values |
+| Traces + metrics (optional) | any OTLP backend | `OTEL_ENDPOINT` / `OTEL_HEADERS`: HTTP requests, Foundry calls, active calls, turn latency, errors, outcomes | the same two values |
 
 LLM calls are named by what they are for (`interviewer`, `score_answer`, `cv_structure`, `jd_check`, `cv_questions`) and grouped per interview as a Langfuse session. `LANGFUSE_CAPTURE_CONTENT=false` keeps prompts and replies out (timings, tokens and cost only).
 
@@ -215,11 +169,22 @@ One-time setup:
 | `DEVICE` | `cpu` / `mps` (Mac) / `cuda` (GPU box) |
 | `DATABASE_URL` | `sqlite+aiosqlite:///...` locally, `postgresql+asyncpg://...?ssl=require` in production |
 | `STORAGE_BACKEND` | `local` / `azure` (`AZURE_STORAGE_CONNECTION_STRING`) / `supabase` |
-| `PADDLE_ENV` | `sandbox` / `production` (separate Paddle accounts, keys and price ids) |
 
-## Stack
+## Tests
 
-STT: faster-whisper · LLM: OpenAI (self-hosted Ollama/vLLM optional) · TTS: Kokoro/Piper · Codec: Encodec
-Transport: FastAPI + WebSocket · Frontend: vanilla JS/Canvas · Eval: jiwer, NISQA
+Self-check scripts that run on fakes (no models, no network), the same set CI runs:
 
-All models open-source/open-weight, self-hosted — no closed API calls.
+```bash
+for t in test_store test_anonymize test_voice_anon test_interview test_agent test_markdown_strip test_session test_resume test_openai_audio test_silence test_monitoring; do
+  uv run python -m tests.$t
+done
+uv run python -m tests.test_ws_integration   # real STT/LLM/TTS over an actual WebSocket
+```
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). Security issues: [SECURITY.md](SECURITY.md).
+
+## License
+
+[MIT](LICENSE)
