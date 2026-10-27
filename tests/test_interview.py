@@ -9,8 +9,8 @@ import tempfile
 from pathlib import Path
 
 from server.agent.cv import CVError, JDError, check_jd, cv_questions, extract_text, structure, summary
-from server.agent.interview import WRAP_UP, Interview, cv_question_count, load_packs, plan_questions, plan_success_profiles
-from server.agent.scoring import delivery, score_interview, score_success_profiles, sp_result, split_answers, verdict, weighted_score
+from server.agent.interview import WRAP_UP, Interview, cv_question_count, load_packs, plan_questions
+from server.agent.scoring import delivery, score_interview, split_answers, verdict, weighted_score
 from server.gateway.session import VoiceSession
 from tests.test_agent import ScriptedLLM, text
 from tests.test_session import SILENCE_FRAME, SPEECH_FRAME, FakeSTT, FakeTTS, FakeVAD
@@ -219,71 +219,8 @@ async def test_cv():
     print("cv PASS")
 
 
-async def test_civil_service():
-    pack = load_packs("packs")["civil_service"]
-    chosen = ["leadership", "working_together", "delivering_at_pace"]
-    plan = plan_success_profiles(pack, "HEO", {"behaviours": chosen, "strengths": True, "experience": True}, random.Random(0))
-    assert [q["element"] for q in plan] == ["experience", "behaviour", "behaviour", "strength", "behaviour", "strength"], plan
-    by_id = {b["id"]: b for b in pack["behaviours"]}
-    for q in plan[1:3]:
-        assert q["text"] in by_id[q["id"]]["questions"]["3"], "HEO asks level 3 questions"
-        assert by_id[q["id"]]["indicators"]["3"][0] in q["brief"], "follow-ups get the grade's indicators"
-    only = plan_success_profiles(pack, "AO", {"behaviours": ["leadership"]})
-    assert [q["element"] for q in only] == ["behaviour"] and only[0]["text"] in by_id["leadership"]["questions"]["1"]
-
-    async def emit(_):
-        pass
-
-    iv = Interview(pack, plan, "Policy Adviser", "HEO", "mixed", emit)
-    assert "HEO grade Policy Adviser" in iv.agent().system_prompt and "Success Profiles" in iv.agent().system_prompt
-    assert "Success Profiles" in await iv.kickoff() and "a strong answer at this grade shows" not in plan[0]["brief"]
-    assert plan[1]["brief"] in await iv.next_question(), "the brief reaches the interviewer with its question"
-
-    assert sp_result([4, 5, 7]) == "Likely pass" and sp_result([3, 6, 5]) == "Borderline"
-    assert sp_result([3, 3, 6]) == "Below the bar" and sp_result([2, 6, 6]) == "Below the bar"
-
-    turn = lambda role, txt, start: {"role": role, "text": txt, "start": start, "end": start + 5}  # noqa: E731
-    record = {
-        "pack_id": "civil_service", "role": "Policy Adviser", "seniority": "HEO", "type": "mixed", "completed": True,
-        "questions": [{**plan[1], "asked_at": 100.0}, {**plan[3], "asked_at": 200.0}],
-        "turns": [turn("assistant", "Tell us...", 101), turn("user", "I set the plan with stakeholders", 107),
-                  turn("assistant", "Something else?", 201), turn("user", "I love helping customers", 207)],
-    }
-    indicator = by_id[plan[1]["id"]]["indicators"]["3"][0]
-    llm = ScriptedLLM([
-        text(json.dumps({"score": 9, "met": [indicator], "missed": [], "strengths": ["clear"], "improved_answer": "I..."})),
-        text(json.dumps({"score": 3, "strengths": ["warm"], "improvements": ["give an example"]})),
-    ])
-    report = await score_success_profiles(record, pack, llm)
-    first, second = report["answers"]
-    assert report["mode"] == "success_profiles" and report["status"] == "scored"
-    assert first["score"] == 7 and first["met"] == [indicator] and first["label"] == plan[1]["label"], "clamped to 7"
-    assert second["element"] == "strength" and second["score"] == 3
-    assert report["verdict"] == "Borderline" and report["average"] == 5.0 and "overall_score" not in report
-    prompts = [r[0][0].content for r in llm.requests]
-    assert indicator in prompts[0] and "Outstanding demonstration" in prompts[0], "grade indicators + 1-7 scale"
-    assert "strengths question" in prompts[1] and indicator not in prompts[1]
-    print("civil service PASS")
-
-
-def test_funnel():
-    from server.funnel import funnel
-
-    table = funnel(
-        [("a", {"landing": "/civil-service", "utm_source": "pcs"}), ("b", {"landing": "/civil-service", "utm_source": "pcs"}), ("c", None)],
-        [("a", "scored", True), ("a", "created", False), ("b", "created", False)],
-        {"a"},
-    )
-    cs = table["/civil-service · pcs"]
-    assert (cs["signed up"], cs["set up a mock"], cs["started a mock"], cs["gave interview date"], cs["paid"]) == (2, 2, 1, 1, 1)
-    assert table["? · direct"]["signed up"] == 1 and table["? · direct"]["paid"] == 0
-    print("funnel PASS")
-
-
 async def main():
     test_packs()
-    test_funnel()
-    await test_civil_service()
     await test_cv()
     await test_question_flow()
     await test_session_kickoff_and_turns()

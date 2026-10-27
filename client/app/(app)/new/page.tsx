@@ -21,47 +21,6 @@ function suggestedLevel(years: number | undefined): string | null {
   if (years === undefined || years === null) return null;
   return years <= 2 ? "junior" : years <= 6 ? "mid" : "senior";
 }
-// GOV.UK grade names, for the Civil Service pack's level picker
-const GRADE_LABEL: Record<string, string> = {
-  AA: "Administrative Assistant",
-  AO: "Administrative Officer",
-  EO: "Executive Officer",
-  HEO: "Higher Executive Officer",
-  SEO: "Senior Executive Officer",
-  G7: "Grade 7",
-  G6: "Grade 6",
-};
-
-// Common Civil Service job titles, suggested in the role field (people can still type their own)
-const CIVIL_ROLES = [
-  "Policy Adviser",
-  "Policy Officer",
-  "Caseworker",
-  "Operational Delivery Officer",
-  "Work Coach",
-  "Customer Service Adviser",
-  "Administrative Officer",
-  "Business Support Officer",
-  "Project Manager",
-  "Programme Manager",
-  "Communications Officer",
-  "Data Analyst",
-  "Finance Business Partner",
-  "HR Business Partner",
-  "Private Secretary",
-  "Team Leader",
-];
-const DEFAULT_ROLE = { generic: "Software Engineer", success_profiles: "Policy Adviser" };
-
-interface Pack {
-  id: string;
-  name: string;
-  kind: "generic" | "success_profiles";
-  levels: string[];
-  behaviours?: { id: string; name: string; definition: string }[];
-  max_behaviours?: number;
-}
-
 const TYPES = [
   { id: "mixed", label: "Behavioral + HR" },
   { id: "behavioral", label: "Behavioral only" },
@@ -70,21 +29,17 @@ const TYPES = [
 
 export default function NewInterview() {
   const session = useRequireAuth();
-  const [packs, setPacks] = useState<Pack[]>([]);
+  const [packs, setPacks] = useState<{ id: string; name: string }[]>([]);
   const [credits, setCredits] = useState<Profile | null>(null);
   const [buy, setBuy] = useState<{ open: boolean; reason?: string }>({ open: false });
   const [paidNotice, setPaidNotice] = useState<string | null>(null);
   const [cvs, setCvs] = useState<Cv[]>([]);
   const [packId, setPackId] = useState("");
-  const [role, setRole] = useState(DEFAULT_ROLE.generic);
+  const [role, setRole] = useState("Software Engineer");
   const [seniority, setSeniority] = useState<string>("mid");
   const [type, setType] = useState("mixed");
   const [cvId, setCvId] = useState<string | null>(null);
   const [jd, setJd] = useState("");
-  const [behaviours, setBehaviours] = useState<string[]>([]);
-  const [strengths, setStrengths] = useState(true);
-  const [experience, setExperience] = useState(false);
-  const [interviewDate, setInterviewDate] = useState("");
   const [consent, setConsent] = useState(false);
   const [status, setStatus] = useState<string | null>(null); // progress line while working
   const [error, setError] = useState<string | null>(null);
@@ -94,11 +49,10 @@ export default function NewInterview() {
   useEffect(() => {
     if (!uid) return;
     const params = new URLSearchParams(window.location.search);
-    gatewayFetch<Pack[]>("/packs")
+    gatewayFetch<{ id: string; name: string }[]>("/packs")
       .then((p) => {
         setPacks(p);
-        const linked = params.get("pack"); // e.g. /new?pack=civil_service from a landing page
-        setPackId((cur) => cur || (p.some((x) => x.id === linked) ? linked! : p[0]?.id) || "");
+        setPackId((cur) => cur || p[0]?.id || "");
       })
       .catch(() => setError("Can't reach the interview server. Is the gateway running?"));
     // "Practice again" from a report: same role, level, type, CV and job post
@@ -108,12 +62,6 @@ export default function NewInterview() {
         (prev) => {
           prefilled.current = true;
           setPackId(prev.pack_id);
-          if (prev.elements) {
-            setBehaviours(prev.elements.behaviours);
-            setStrengths(prev.elements.strengths);
-            setExperience(prev.elements.experience);
-          }
-          setInterviewDate(prev.interview_date ?? "");
           setRole(prev.role);
           setSeniority(prev.seniority);
           setType(prev.interview_type);
@@ -154,21 +102,10 @@ export default function NewInterview() {
 
   // pre-select the level from the chosen CV (the user can still change it)
   const selectedYears = cvs.find((c) => c.id === cvId)?.cv_profile?.years_experience;
-  const pack = packs.find((p) => p.id === packId);
-  const civil = pack?.kind === "success_profiles";
   useEffect(() => {
     const level = suggestedLevel(selectedYears);
-    if (level && !prefilled.current && !civil) setSeniority(level);
-  }, [cvId, selectedYears, civil]);
-  // switching packs swaps the default role, but never one the user typed or carried over from an earlier interview
-  useEffect(() => {
-    if (!pack || prefilled.current) return;
-    setRole((cur) => (Object.values(DEFAULT_ROLE).includes(cur) ? DEFAULT_ROLE[pack.kind] : cur));
-  }, [pack]);
-  // keep the level valid for the chosen pack (grades for Civil Service, seniorities otherwise)
-  useEffect(() => {
-    if (pack && !pack.levels.includes(seniority)) setSeniority(civil ? "HEO" : "mid");
-  }, [pack, civil, seniority]);
+    if (level && !prefilled.current) setSeniority(level);
+  }, [cvId, selectedYears]);
 
   const run = async (label: string, work: () => Promise<void>) => {
     setStatus(label);
@@ -211,13 +148,12 @@ export default function NewInterview() {
           pack_id: packId,
           role,
           seniority,
-          interview_type: civil ? "mixed" : type,
-          cv_id: civil ? null : cvId,
+          interview_type: type,
+          cv_id: cvId,
           jd_text: jd || null,
-          ...(civil && { elements: { behaviours, strengths, experience }, interview_date: interviewDate || null }),
         }),
       });
-      setStatus(civil ? "Preparing your panel…" : "Preparing questions from your CV…");
+      setStatus("Preparing questions from your CV…");
       await gatewayFetch(`/sessions/${id}/prepare`, { method: "POST" });
       refreshCredits();
       window.location.assign(`/interview/${id}`);
@@ -227,20 +163,13 @@ export default function NewInterview() {
   if (!session) return <main className={PAGE} />;
   const selected = cvs.find((c) => c.id === cvId);
   const suggested = suggestedLevel(selected?.cv_profile?.years_experience);
-  const maxBehaviours = pack?.max_behaviours ?? 6;
-  const blocker =
-    !civil && !cvId
-      ? "Add your CV to continue."
-      : !role.trim()
-        ? "Enter the role you're interviewing for."
-        : civil && !behaviours.length
-          ? "Tick the behaviours listed in the job advert."
-          : !consent
-            ? "Tick the recording consent to start."
-            : null;
-  const toggleBehaviour = (id: string) =>
-    setBehaviours((list) => (list.includes(id) ? list.filter((b) => b !== id) : list.length < maxBehaviours ? [...list, id] : list));
-  const n = civil ? 0 : 1; // the CV step is skipped for Civil Service panels
+  const blocker = !cvId
+    ? "Add your CV to continue."
+    : !role.trim()
+      ? "Enter the role you're interviewing for."
+      : !consent
+        ? "Tick the recording consent to start."
+        : null;
 
   return (
     <main className={PAGE}>
@@ -248,9 +177,7 @@ export default function NewInterview() {
       <form onSubmit={start} className="mx-auto w-full max-w-2xl">
         <h1 className="text-[2.125rem] font-bold leading-tight text-ink text-balance">Set up your mock interview</h1>
         <p className="mt-2 text-ink-secondary">
-          {civil
-            ? "A Civil Service panel interview by voice: one question per behaviour, scored 1 to 7 at your grade straight after."
-            : "About 20 minutes, 5 questions, by voice. You get a scored report straight after."}
+          About 20 minutes, 5 questions, by voice. You get a scored report straight after.
         </p>
         {paidNotice && (
           <p role="status" className="mt-6 flex items-center gap-2 rounded-[12px] bg-primary/10 px-4 py-3 text-sm text-ink">
@@ -260,98 +187,96 @@ export default function NewInterview() {
         )}
 
         <ol className="mt-8 space-y-4">
-          {!civil && (
-            <Step n={1} title="Your CV" done={!!cvId}>
-              <p className="text-sm text-ink-secondary">
-                The interviewer asks about your real experience, so questions are built from your CV. Your name, contact
-                details, and LinkedIn or GitHub links and IDs are removed before the AI reads it, and the original file is never stored.
-              </p>
-              {cvs.length > 0 && (
-                <div className="mt-4 space-y-1" role="radiogroup" aria-label="Your CVs">
-                  {cvs.map((cv) => (
-                    <div
-                      key={cv.id}
-                      className="flex items-center justify-between gap-3 rounded-[8px] px-3 py-2 has-[:checked]:bg-primary/10"
+          <Step n={1} title="Your CV" done={!!cvId}>
+            <p className="text-sm text-ink-secondary">
+              The interviewer asks about your real experience, so questions are built from your CV. Your name, contact
+              details, and LinkedIn or GitHub links and IDs are removed before the AI reads it, and the original file is never stored.
+            </p>
+            {cvs.length > 0 && (
+              <div className="mt-4 space-y-1" role="radiogroup" aria-label="Your CVs">
+                {cvs.map((cv) => (
+                  <div
+                    key={cv.id}
+                    className="flex items-center justify-between gap-3 rounded-[8px] px-3 py-2 has-[:checked]:bg-primary/10"
+                  >
+                    <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 text-ink">
+                      <input type="radio" name="cv" checked={cvId === cv.id} onChange={() => setCvId(cv.id)} />
+                      <span className="truncate">{cv.file_name}</span>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => void deleteCv(cv.id)}
+                      aria-label={`Delete ${cv.file_name}`}
+                      className="shrink-0 text-sm text-ink-secondary hover:text-error"
                     >
-                      <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 text-ink">
-                        <input type="radio" name="cv" checked={cvId === cv.id} onChange={() => setCvId(cv.id)} />
-                        <span className="truncate">{cv.file_name}</span>
-                      </label>
-                      <button
-                        type="button"
-                        onClick={() => void deleteCv(cv.id)}
-                        aria-label={`Delete ${cv.file_name}`}
-                        className="shrink-0 text-sm text-ink-secondary hover:text-error"
-                      >
-                        Delete
-                      </button>
-                    </div>
+                      Delete
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <label className={`${SECONDARY} mt-4 inline-flex cursor-pointer items-center gap-2 has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-primary`}>
+              {cvs.length ? "Upload another CV" : "Upload your CV"}
+              <span className="text-ink-secondary">PDF, DOCX or TXT</span>
+              <input
+                type="file"
+                accept=".pdf,.docx,.txt"
+                className="sr-only"
+                onChange={(e) => uploadFile(e.target.files?.[0])}
+                disabled={!!status}
+              />
+            </label>
+            {status?.startsWith("Reading") && (
+              <p role="status" className="mt-3 flex items-center gap-2 text-sm text-ink-secondary">
+                <span className="size-3 animate-pulse rounded-full bg-primary" aria-hidden />
+                {status}
+              </p>
+            )}
+            {selected?.cv_profile && (
+              <div className="mt-4 rounded-[12px] bg-bg p-4 text-sm">
+                <p className="font-semibold text-ink">{selected.cv_profile.headline}</p>
+                <ul className="mt-1 text-ink-secondary">
+                  {selected.cv_profile.roles?.slice(0, 4).map((r, i) => (
+                    <li key={i}>
+                      {r.title} · {r.company} {r.dates && `(${r.dates})`}
+                    </li>
                   ))}
-                </div>
-              )}
-              <label className={`${SECONDARY} mt-4 inline-flex cursor-pointer items-center gap-2 has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-primary`}>
-                {cvs.length ? "Upload another CV" : "Upload your CV"}
-                <span className="text-ink-secondary">PDF, DOCX or TXT</span>
-                <input
-                  type="file"
-                  accept=".pdf,.docx,.txt"
-                  className="sr-only"
-                  onChange={(e) => uploadFile(e.target.files?.[0])}
-                  disabled={!!status}
-                />
-              </label>
-              {status?.startsWith("Reading") && (
-                <p role="status" className="mt-3 flex items-center gap-2 text-sm text-ink-secondary">
-                  <span className="size-3 animate-pulse rounded-full bg-primary" aria-hidden />
-                  {status}
+                </ul>
+                {!!selected.cv_profile.probe_points?.length && (
+                  <>
+                    <p className="mt-3 font-semibold text-ink">The interviewer may ask about</p>
+                    <ul className="mt-1 list-disc space-y-0.5 pl-5 text-ink-secondary">
+                      {selected.cv_profile.probe_points.slice(0, 5).map((p, i) => (
+                        <li key={i}>{p.claim}</li>
+                      ))}
+                    </ul>
+                  </>
+                )}
+                <p className="mt-3 text-xs text-ink-secondary">Looks wrong? Delete it and upload a text-based PDF or DOCX.</p>
+              </div>
+            )}
+            {selected?.anon_text && (
+              <details className="mt-3 rounded-[12px] border border-divider p-4 text-sm">
+                <summary className="cursor-pointer font-semibold text-ink">What the AI sees</summary>
+                <p className="mt-2 text-xs text-ink-secondary">
+                  Your CV after anonymization. This is all that's sent to the AI and all we keep.
                 </p>
-              )}
-              {selected?.cv_profile && (
-                <div className="mt-4 rounded-[12px] bg-bg p-4 text-sm">
-                  <p className="font-semibold text-ink">{selected.cv_profile.headline}</p>
-                  <ul className="mt-1 text-ink-secondary">
-                    {selected.cv_profile.roles?.slice(0, 4).map((r, i) => (
-                      <li key={i}>
-                        {r.title} · {r.company} {r.dates && `(${r.dates})`}
-                      </li>
-                    ))}
-                  </ul>
-                  {!!selected.cv_profile.probe_points?.length && (
-                    <>
-                      <p className="mt-3 font-semibold text-ink">The interviewer may ask about</p>
-                      <ul className="mt-1 list-disc space-y-0.5 pl-5 text-ink-secondary">
-                        {selected.cv_profile.probe_points.slice(0, 5).map((p, i) => (
-                          <li key={i}>{p.claim}</li>
-                        ))}
-                      </ul>
-                    </>
+                <pre className="mt-3 max-h-72 overflow-auto whitespace-pre-wrap font-sans text-ink-secondary">
+                  {selected.anon_text.split(/(\[[A-Z]+\])/).map((part, i) =>
+                    i % 2 ? (
+                      <mark key={i} className="rounded bg-primary/15 px-1 font-semibold text-primary">
+                        {part}
+                      </mark>
+                    ) : (
+                      part
+                    ),
                   )}
-                  <p className="mt-3 text-xs text-ink-secondary">Looks wrong? Delete it and upload a text-based PDF or DOCX.</p>
-                </div>
-              )}
-              {selected?.anon_text && (
-                <details className="mt-3 rounded-[12px] border border-divider p-4 text-sm">
-                  <summary className="cursor-pointer font-semibold text-ink">What the AI sees</summary>
-                  <p className="mt-2 text-xs text-ink-secondary">
-                    Your CV after anonymization. This is all that's sent to the AI and all we keep.
-                  </p>
-                  <pre className="mt-3 max-h-72 overflow-auto whitespace-pre-wrap font-sans text-ink-secondary">
-                    {selected.anon_text.split(/(\[[A-Z]+\])/).map((part, i) =>
-                      i % 2 ? (
-                        <mark key={i} className="rounded bg-primary/15 px-1 font-semibold text-primary">
-                          {part}
-                        </mark>
-                      ) : (
-                        part
-                      ),
-                    )}
-                  </pre>
-                </details>
-              )}
-            </Step>
-          )}
+                </pre>
+              </details>
+            )}
+          </Step>
 
-          <Step n={n + 1} title="The job" done={!!role.trim() && (!civil || behaviours.length > 0)}>
+          <Step n={2} title="The job" done={!!role.trim()}>
             {packs.length > 1 && (
               <div className="mb-4">
                 <label htmlFor="pack" className={LABEL}>
@@ -376,108 +301,41 @@ export default function NewInterview() {
               value={role}
               onChange={(e) => setRole(e.target.value)}
               className={INPUT}
-              list={civil ? "civil-roles" : undefined}
-              placeholder={civil ? "e.g. Policy Adviser, Caseworker, Project Manager" : "e.g. Accountant, Product Manager, Nurse"}
+              placeholder="e.g. Accountant, Product Manager, Nurse"
             />
-            {civil && (
-              <datalist id="civil-roles">
-                {CIVIL_ROLES.map((r) => (
-                  <option key={r} value={r} />
+            <fieldset className="mt-5">
+              <legend className={LABEL}>Level of the job</legend>
+              <div className="grid grid-cols-3 gap-2">
+                {LEVELS.map((l) => (
+                  <label
+                    key={l.id}
+                    className="cursor-pointer rounded-[8px] border border-divider bg-surface px-3 py-2 text-center transition-colors hover:border-primary has-[:checked]:border-primary has-[:checked]:bg-primary/10 has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-primary"
+                  >
+                    <input type="radio" name="seniority" value={l.id} checked={seniority === l.id} onChange={() => setSeniority(l.id)} className="sr-only" />
+                    <span className="block text-sm font-semibold text-ink">{l.label}</span>
+                    <span className="block text-xs text-ink-secondary">{l.examples}</span>
+                  </label>
                 ))}
-              </datalist>
-            )}
-            {civil ? (
-              <>
-                <div className="mt-5">
-                  <label htmlFor="grade" className={LABEL}>
-                    Grade
-                  </label>
-                  <select id="grade" value={seniority} onChange={(e) => setSeniority(e.target.value)} className={INPUT}>
-                    {pack.levels.map((g) => (
-                      <option key={g} value={g}>
-                        {g} · {GRADE_LABEL[g] ?? g}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <fieldset className="mt-5">
-                  <legend className={LABEL}>Behaviours in the job advert</legend>
-                  <p className="mb-2 text-xs text-ink-secondary">
-                    Tick the ones the advert lists, up to {maxBehaviours}. You get one question on each.
-                  </p>
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    {pack.behaviours?.map((b) => (
-                      <label
-                        key={b.id}
-                        title={b.definition}
-                        className="flex cursor-pointer items-center gap-2 rounded-[8px] border border-divider bg-surface px-3 py-2 text-sm text-ink has-[:checked]:border-primary has-[:checked]:bg-primary/10"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={behaviours.includes(b.id)}
-                          disabled={!behaviours.includes(b.id) && behaviours.length >= maxBehaviours}
-                          onChange={() => toggleBehaviour(b.id)}
-                        />
-                        {b.name}
-                      </label>
-                    ))}
-                  </div>
-                </fieldset>
-                <fieldset className="mt-5 space-y-2">
-                  <legend className={LABEL}>Also assessed</legend>
-                  <label className="flex items-center gap-2 text-sm text-ink">
-                    <input type="checkbox" checked={strengths} onChange={(e) => setStrengths(e.target.checked)} />
-                    Strengths questions (short, unprepared questions about what you enjoy and do well)
-                  </label>
-                  <label className="flex items-center gap-2 text-sm text-ink">
-                    <input type="checkbox" checked={experience} onChange={(e) => setExperience(e.target.checked)} />
-                    An experience question
-                  </label>
-                </fieldset>
-                <div className="mt-5">
-                  <label htmlFor="date" className={LABEL}>
-                    Date of your real interview (optional)
-                  </label>
-                  <input id="date" type="date" value={interviewDate} onChange={(e) => setInterviewDate(e.target.value)} className={INPUT} />
-                </div>
-              </>
-            ) : (
-              <>
-              <fieldset className="mt-5">
-                <legend className={LABEL}>Level of the job</legend>
-                <div className="grid grid-cols-3 gap-2">
-                  {LEVELS.map((l) => (
-                    <label
-                      key={l.id}
-                      className="cursor-pointer rounded-[8px] border border-divider bg-surface px-3 py-2 text-center transition-colors hover:border-primary has-[:checked]:border-primary has-[:checked]:bg-primary/10 has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-primary"
-                    >
-                      <input type="radio" name="seniority" value={l.id} checked={seniority === l.id} onChange={() => setSeniority(l.id)} className="sr-only" />
-                      <span className="block text-sm font-semibold text-ink">{l.label}</span>
-                      <span className="block text-xs text-ink-secondary">{l.examples}</span>
-                    </label>
-                  ))}
-                </div>
-                {suggested && seniority === suggested && (
-                  <p className="mt-2 text-xs text-ink-secondary">Suggested from your CV. Change it if you&apos;re applying for a different level.</p>
-                )}
-              </fieldset>
-              <div className="mt-5">
-                <label htmlFor="type" className={LABEL}>
-                  Questions
-                </label>
-                <select id="type" value={type} onChange={(e) => setType(e.target.value)} className={INPUT}>
-                  {TYPES.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.label}
-                    </option>
-                  ))}
-                </select>
               </div>
-              </>
-            )}
+              {suggested && seniority === suggested && (
+                <p className="mt-2 text-xs text-ink-secondary">Suggested from your CV. Change it if you&apos;re applying for a different level.</p>
+              )}
+            </fieldset>
+            <div className="mt-5">
+              <label htmlFor="type" className={LABEL}>
+                Questions
+              </label>
+              <select id="type" value={type} onChange={(e) => setType(e.target.value)} className={INPUT}>
+                {TYPES.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.label}
+                  </option>
+                ))}
+              </select>
+            </div>
           </Step>
 
-          <Step n={n + 2} title={civil ? "Job advert (optional)" : "Job post (optional)"} done={!!jd.trim()}>
+          <Step n={3} title="Job post (optional)" done={!!jd.trim()}>
             <label htmlFor="jd" className="sr-only">
               Job description
             </label>
@@ -488,11 +346,7 @@ export default function NewInterview() {
               value={jd}
               onChange={(e) => setJd(e.target.value)}
               className={INPUT}
-              placeholder={
-                civil
-                  ? "Paste the job advert so your answers are scored against the role."
-                  : "Paste the job post to get a question on the gap between it and your CV."
-              }
+              placeholder="Paste the job post to get a question on the gap between it and your CV."
             />
           </Step>
         </ol>

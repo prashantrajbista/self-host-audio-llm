@@ -81,7 +81,7 @@ export default function History() {
                 </span>
                 {r.status === "scored" ? (
                   <span className="text-right">
-                    <span className="block text-xl font-bold text-ink tabular-nums">{r.average != null ? `${r.average}/7` : `${r.overall_score}/100`}</span>
+                    <span className="block text-xl font-bold text-ink tabular-nums">{r.overall_score}/100</span>
                     <span className="text-sm text-ink-secondary">{r.verdict}</span>
                   </span>
                 ) : (

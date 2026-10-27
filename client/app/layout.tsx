@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import { FirstTouch } from "@/components/FirstTouch";
 import { THEME_SCRIPT } from "@/lib/theme";
 import { BRAND, SITE_URL, TAGLINE } from "@/lib/site";
 
@@ -32,7 +31,6 @@ export default function RootLayout({
       </head>
       <body suppressHydrationWarning>
         {children}
-        <FirstTouch />
         {CF_ANALYTICS_TOKEN && (
           <script
             defer

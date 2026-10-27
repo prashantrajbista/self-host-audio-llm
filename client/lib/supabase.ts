@@ -85,5 +85,4 @@ export interface InterviewSession {
   created_at: string;
   dimensions?: Record<string, number> | null; // scored only: skill averages, 1-5
   rubric?: Record<string, string>; // scored only: skill -> what it measures
-  average?: number | null; // scored Civil Service interviews: mean score out of 7
 }

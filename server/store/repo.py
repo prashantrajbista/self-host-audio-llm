@@ -40,14 +40,6 @@ async def profile(db: AsyncSession, uid: str) -> Profile:
     return await db.get(Profile, uid, populate_existing=True)
 
 
-async def set_attribution(db: AsyncSession, uid: str, attribution: dict) -> None:
-    """First touch wins: later calls (other devices, cleared storage) don't overwrite it."""
-    p = await profile(db, uid)
-    if p.attribution is None:
-        p.attribution = attribution
-        await db.commit()
-
-
 def has_pass(p: Profile) -> bool:
     return bool(p.pass_until and _aware(p.pass_until) > _now())
 

@@ -105,9 +105,7 @@ export default function InterviewCall() {
           <div className="w-full max-w-md">
             <h1 className="text-[2.125rem] font-bold leading-tight text-ink text-balance">Ready for your interview?</h1>
             <p className="mt-2 text-ink-secondary">
-              {row.pack_id === "civil_service"
-                ? `${row.seniority} ${row.role}. A Civil Service panel interview, up to 45 minutes. Have your notes ready.`
-                : `${LEVEL_LABEL[row.seniority] ?? row.seniority} ${row.role}. About 20 minutes, 5 questions.`}
+              {LEVEL_LABEL[row.seniority] ?? row.seniority} {row.role}. About 20 minutes, 5 questions.
             </p>
             <ul className="mt-6 space-y-3 text-[0.9375rem] text-ink">
               <Tip icon={<HeadphonesIcon size={18} />}>
