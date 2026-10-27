@@ -20,4 +20,4 @@ infra/terraform.tfvars
 
 brag-output
 .agents
-skills-lock.json
+skills-lock.json.DS_Store
