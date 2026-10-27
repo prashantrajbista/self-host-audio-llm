@@ -1,4 +1,13 @@
+<p align="center">
+  <img src=".github/banner.jpg" alt="VoiceWire Interview: AI mock interview, by voice" width="100%">
+</p>
+
 # VoiceWire Interview
+
+[![CI](https://github.com/prashantrajbista/self-host-audio-llm/actions/workflows/ci.yml/badge.svg)](https://github.com/prashantrajbista/self-host-audio-llm/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-teal.svg)](LICENSE)
+![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)
+![Next.js](https://img.shields.io/badge/Next.js-16-black.svg)
 
 Open-source AI mock interviewer that works entirely by voice. It reads your CV, asks about your real experience,
 follows up when an answer is vague, lets you interrupt it mid-sentence, then scores every answer.
@@ -10,7 +19,9 @@ follows up when an answer is vague, lets you interrupt it mid-sentence, then sco
 
 ## Demo
 
-https://youtu.be/jfJdfxSZwt4
+[![Watch the demo on YouTube](https://img.youtube.com/vi/jfJdfxSZwt4/maxresdefault.jpg)](https://youtu.be/jfJdfxSZwt4)
+
+Click to watch on YouTube.
 
 ## Features
 
