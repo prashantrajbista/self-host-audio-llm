@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
 import { LegalPage } from "@/components/LegalPage";
-import { BRAND, OPERATOR, RETENTION_DAYS, SUPPORT_EMAIL } from "@/lib/site";
+import { BRAND, OPERATOR, PAYMENTS, RETENTION_DAYS, SUPPORT_EMAIL } from "@/lib/site";
 
 export const metadata: Metadata = { title: `Privacy policy · ${BRAND}` };
 
-// Template drafted from how the product actually works; have it reviewed before launch.
+// Template drafted from how the software works; the operator of an instance must review it and name their own providers.
 export default function Privacy() {
   const mail = <a href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a>;
   return (
@@ -33,10 +33,12 @@ export default function Privacy() {
           speech is transcribed from your real voice; only the stored replay is disguised. Your words in the transcript
           and replay are unchanged, so anything identifying you say out loud stays in them.
         </li>
-        <li>
-          <strong>Payments:</strong> which plan you bought, the amount and the transaction reference. Card details go
-          directly to our payment provider; we never see or store them.
-        </li>
+        {PAYMENTS && (
+          <li>
+            <strong>Payments:</strong> which plan you bought, the amount and the transaction reference. Card details go
+            directly to our payment provider; we never see or store them.
+          </li>
+        )}
         <li>
           <strong>Messages to us:</strong> what you send through the contact form (name, email, topic and message), kept so
           we can answer and follow up.
@@ -45,18 +47,13 @@ export default function Privacy() {
           <strong>Technical data:</strong> server logs (such as IP address and errors) used to keep the service secure and
           working.
         </li>
-        <li>
-          <strong>How you found us:</strong> the page you first landed on, the website that linked you (its domain only)
-          and any campaign tag in the link, saved to your account when you sign in so we can see which pages and channels
-          work. For practice interviews you can also give the date of your real interview.
-        </li>
       </ul>
 
       <h2>Why we use it</h2>
       <ul>
         <li>To run your mock interviews: generate questions from your CV, hold the conversation, and score your answers.</li>
         <li>To let you replay interviews and see your history.</li>
-        <li>To process payments and give you the interviews you bought.</li>
+        {PAYMENTS && <li>To process payments and give you the interviews you bought.</li>}
         <li>To keep the service secure and fix problems.</li>
       </ul>
       <p>
@@ -66,21 +63,23 @@ export default function Privacy() {
       <h2>Who else handles your data</h2>
       <ul>
         <li>
-          <strong>Supabase</strong>: sign-in.
+          <strong>Our sign-in provider</strong>: your account and sign-in.
         </li>
         <li>
-          <strong>Microsoft Azure</strong>: hosts our servers and the private storage for voice-disguised recordings.
+          <strong>Our hosting provider</strong>: runs our servers and the private storage for voice-disguised recordings.
         </li>
         <li>
-          <strong>Microsoft Azure AI Foundry</strong>, our AI model provider: receives your anonymized CV text (never your
-          name or contact details), the job post and interview transcripts to run the interviewer and score your answers,
-          and your live speech audio during the interview to transcribe it and to voice the interviewer. It processes this
-          to give us a response and does not use it to train its models under our agreement with it.
+          <strong>Our AI model provider</strong>, if we use a hosted one rather than models on our own servers: receives
+          your anonymized CV text (never your name or contact details), the job post and interview transcripts to run the
+          interviewer and score your answers, and your live speech audio during the interview to transcribe it and to
+          voice the interviewer.
         </li>
-        <li>
-          <strong>Paddle</strong>: our reseller and merchant of record. It handles checkout, payment, tax and invoicing
-          under its own privacy policy.
-        </li>
+        {PAYMENTS && (
+          <li>
+            <strong>Our payment provider</strong>: handles checkout, payment, tax and invoicing under its own privacy
+            policy.
+          </li>
+        )}
       </ul>
       <p>
         The recording we keep for your replay is disguised on our own servers: your side is pitch- and
@@ -103,7 +102,7 @@ export default function Privacy() {
           including stored files, within {RETENTION_DAYS} days.
         </li>
         <li>Transcripts and reports of interviews you keep stay available to you while your account exists.</li>
-        <li>Payment records are kept for as long as tax and accounting law requires.</li>
+        {PAYMENTS && <li>Payment records are kept for as long as tax and accounting law requires.</li>}
       </ul>
 
       <h2>Your rights</h2>
@@ -115,10 +114,8 @@ export default function Privacy() {
 
       <h2>Cookies and storage</h2>
       <p>
-        We only use what the service needs to work: your browser stores your sign-in session and, until you sign in, the
-        page you first landed on. We use no advertising or tracking cookies. We count page visits with Cloudflare Web
-        Analytics, which sets no cookies and doesn&apos;t track you across sites. During checkout, Paddle may set its own
-        cookies for fraud prevention.
+        We only use what the service needs to work: your browser stores your sign-in session. We use no advertising or
+        tracking cookies.{PAYMENTS && " During checkout, our payment provider may set its own cookies for fraud prevention."}
       </p>
 
       <h2>Security</h2>

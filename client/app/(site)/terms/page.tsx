@@ -4,7 +4,7 @@ import { BRAND, FREE_MOCKS, JURISDICTION, OPERATOR, PAYMENTS, SUPPORT_EMAIL } fr
 
 export const metadata: Metadata = { title: `Terms of service · ${BRAND}` };
 
-// Template drafted from how the product actually works; have it reviewed before launch.
+// Template drafted from how the software works; the operator of an instance must review it before going live.
 export default function Terms() {
   const mail = <a href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a>;
   return (
@@ -42,9 +42,8 @@ export default function Terms() {
 
         <h2>Payments</h2>
         <p>
-          Our order process is conducted by our online reseller Paddle.com. Paddle.com is the Merchant of Record for all our
-          orders. Paddle provides all customer service inquiries and handles returns. Prices are shown before you pay, and
-          taxes are added at checkout where they apply.
+          Payments are handled by our payment provider. Prices are shown before you pay, and taxes are added at checkout
+          where they apply.
         </p>
 
         <h2>No refunds</h2>

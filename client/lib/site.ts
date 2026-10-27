@@ -4,10 +4,11 @@
 export const BRAND = "VoiceWire Interview";
 export const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
 export const TAGLINE = "Practice interviews with a live AI interviewer and get scored feedback.";
-export const OPERATOR = "VoiceWire"; // who sells the service (update to the legal entity or your legal name)
-export const JURISDICTION = "Nepal";
-export const SUPPORT_EMAIL = "hello@voicewire.tech";
-export const LEGAL_UPDATED = "5 October 2026";
+// Who runs this instance: set these before going live, the legal pages are filled in from them.
+export const OPERATOR = process.env.NEXT_PUBLIC_OPERATOR || "the operator of this site";
+export const JURISDICTION = process.env.NEXT_PUBLIC_JURISDICTION || "the country where the operator is based";
+export const SUPPORT_EMAIL = process.env.NEXT_PUBLIC_SUPPORT_EMAIL || "admin@example.com";
+export const LEGAL_UPDATED = "27 October 2026";
 export const FREE_MOCKS = 2;
 // Off unless NEXT_PUBLIC_PAYMENTS_ENABLED=true (baked in at build). Must match the server's PAYMENTS_ENABLED:
 // the server decides who can start an interview; this only decides whether public pages talk about prices.

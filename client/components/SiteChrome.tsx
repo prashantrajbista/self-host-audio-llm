@@ -1,6 +1,6 @@
 import { HeaderAuthLinks } from "@/components/AuthAware";
 import { ThemeToggle } from "@/components/ThemeToggle";
-import { BRAND, OPERATOR, PAYMENTS } from "@/lib/site";
+import { BRAND, PAYMENTS } from "@/lib/site";
 
 export function SiteHeader() {
   return (
@@ -26,9 +26,6 @@ export function SiteHeader() {
 
 const LINKS = [
   ...(PAYMENTS ? [{ href: "/#pricing", label: "Pricing" }] : []),
-  { href: "/interview-warmup-alternative", label: "Interview Warmup alternative" },
-  { href: "/behavioral-interview-practice", label: "Behavioral interview practice" },
-  { href: "/civil-service", label: "Civil Service interview practice" },
   { href: "/terms", label: "Terms" },
   { href: "/privacy", label: "Privacy" },
   { href: "/contact", label: "Contact" },
@@ -39,7 +36,7 @@ export function SiteFooter() {
     <footer className="border-t border-divider">
       <div className="mx-auto flex max-w-5xl flex-col gap-4 px-4 py-8 text-sm text-ink-secondary sm:flex-row sm:items-center sm:justify-between">
         <p>
-          © {new Date().getFullYear()} {OPERATOR}. Practice interviews, privately.
+          {BRAND} is open source (MIT). Practice interviews, privately.
         </p>
         <nav aria-label="Footer" className="flex flex-wrap gap-x-5 gap-y-2">
           {LINKS.map((l) => (
